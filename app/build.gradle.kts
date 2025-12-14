@@ -13,10 +13,10 @@ android {
 
     defaultConfig {
         applicationId = "com.skai.lofintrackerapp"
-        minSdk = 24
-        targetSdk = 36
-        versionCode = 3
-        versionName = "2.0"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 4
+        versionName = "2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

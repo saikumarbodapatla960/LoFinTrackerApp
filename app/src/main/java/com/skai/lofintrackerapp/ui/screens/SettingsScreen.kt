@@ -1,124 +1,122 @@
-// In ...ui.screens/SettingsScreen.kt
+// In ...ui/screens/SettingsScreen.kt
 package com.skai.lofintrackerapp.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.SettingsSystemDaydream
+import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.skai.lofintrackerapp.ui.common.FormDropdown
 import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 
 @Composable
 fun SettingsScreen(viewModel: MainViewModel) {
-    val userName by viewModel.userName.collectAsStateWithLifecycle()
     val currentTheme by viewModel.appTheme.collectAsStateWithLifecycle()
+    val currentCurrency by viewModel.currency.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
-    var nameText by remember(userName) { mutableStateOf(userName ?: "") }
+    // List of supported currencies
+    val currencies = listOf("INR", "USD", "EUR", "GBP", "JPY")
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // --- Profile Section ---
+        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Appearance", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Theme Selector
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text("Profile", style = MaterialTheme.typography.titleLarge)
-
-                OutlinedTextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    label = { Text("Your Name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        // Save button inside the text field
-                        if (nameText != userName) {
-                            Button(
-                                onClick = { viewModel.saveUserName(nameText) },
-                                modifier = Modifier.padding(end = 8.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp)
-                            ) {
-                                Text("Save")
-                            }
-                        }
-                    }
-                )
-            }
-        }
-
-        // --- Appearance Section ---
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text("Appearance", style = MaterialTheme.typography.titleLarge)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    ThemeButton(
-                        label = "Light",
-                        icon = Icons.Default.LightMode,
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("App Theme", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
                         selected = currentTheme == "light",
-                        onClick = { viewModel.saveAppTheme("light") }
+                        onClick = { viewModel.saveAppTheme("light") },
+                        label = { Text("Light") }
                     )
-                    ThemeButton(
-                        label = "Dark",
-                        icon = Icons.Default.DarkMode,
+                    FilterChip(
                         selected = currentTheme == "dark",
-                        onClick = { viewModel.saveAppTheme("dark") }
+                        onClick = { viewModel.saveAppTheme("dark") },
+                        label = { Text("Dark") }
                     )
-                    ThemeButton(
-                        label = "System",
-                        icon = Icons.Default.SettingsSystemDaydream,
+                    FilterChip(
                         selected = currentTheme == "system",
-                        onClick = { viewModel.saveAppTheme("system") }
+                        onClick = { viewModel.saveAppTheme("system") },
+                        label = { Text("System") }
                     )
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Preferences", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Currency Selector
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Currency", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Simple dropdown reusing your component
+                FormDropdown(
+                    label = "Select Currency",
+                    options = currencies,
+                    onOptionSelected = { index -> viewModel.saveCurrency(currencies[index]) },
+                    selectedTextValue = currentCurrency
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Support", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Feedback Button
+        SettingsItem(
+            icon = Icons.Default.Feedback,
+            title = "Send Feedback",
+            onClick = {
+                // REPLACE THIS LINK WITH YOUR GOOGLE FORM LINK
+                val formUrl = "https://forms.gle/RkVjy2FaMH4XGBPv9"
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(formUrl))
+                context.startActivity(intent)
+            }
+        )
     }
 }
 
 @Composable
-private fun ThemeButton(
-    label: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FilledTonalIconButton(
-            onClick = onClick,
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-            ),
-            modifier = Modifier.size(64.dp)
+fun SettingsItem(icon: ImageVector, title: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(imageVector = icon, contentDescription = label)
+            Icon(icon, contentDescription = null)
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(title, style = MaterialTheme.typography.bodyLarge)
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-        )
     }
 }

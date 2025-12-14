@@ -1,13 +1,10 @@
-// In ...ui/screens/LoansScreen.kt
 package com.skai.lofintrackerapp.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,99 +17,61 @@ import com.skai.lofintrackerapp.data.db.Loan
 import com.skai.lofintrackerapp.data.db.Transaction
 import com.skai.lofintrackerapp.ui.common.ConfirmationDialog
 import com.skai.lofintrackerapp.ui.common.ReusableTotalCard
+import com.skai.lofintrackerapp.ui.common.formatCurrency
 import com.skai.lofintrackerapp.ui.theme.FabGreen
 import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
-import java.text.NumberFormat
-import java.util.Locale
+// --- IMPORT THIS ---
+import com.skai.lofintrackerapp.ui.screens.FilterSelectionItem
 
 @Composable
 fun LoansScreen(viewModel: MainViewModel) {
-
-    // --- State Management ---
     val loans by viewModel.allLoans.collectAsStateWithLifecycle()
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
     val totalLoans by viewModel.totalLoans.collectAsStateWithLifecycle()
+    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
+    val currency by viewModel.currency.collectAsStateWithLifecycle()
 
-    // Dialog States
     var showAddOrEditDialog by remember { mutableStateOf(false) }
     var loanToEdit by remember { mutableStateOf<Loan?>(null) }
     var showEditConfirmation by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf<Loan?>(null) }
-
-    // Transaction Edit States
     var showTransactionDialog by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
 
-    // Filter States
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
     val endDate by viewModel.endDate.collectAsStateWithLifecycle()
     val selectedLoanIds by viewModel.selectedLoanIds.collectAsStateWithLifecycle()
     val filteredTransactions by viewModel.filteredLoanTransactions.collectAsStateWithLifecycle()
 
+    // Map loans to filter items (ID + Name)
     val filterItems = remember(loans) {
         loans.map { FilterSelectionItem(id = it.id, name = "${it.name} (${it.lender})") }
     }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    loanToEdit = null
-                    showAddOrEditDialog = true
-                },
-                containerColor = FabGreen
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Loan")
+            FloatingActionButton(onClick = { loanToEdit = null; showAddOrEditDialog = true }, containerColor = FabGreen) {
+                Icon(Icons.Default.Add, "Add Loan")
             }
         },
-        // --- FIX: REMOVE EXTRA TOP PADDING ---
         contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-
-            // 1. Total Loans Card
-            // Manually add top padding here
-            ReusableTotalCard(
-                title = "Total Outstanding Loans",
-                totalAmount = totalLoans,
-                cardColor = Color(0xFFFFF8E1),
-                textColor = Color(0xFFFF9800),
-                modifier = Modifier.padding(top = 16.dp)
-            )
-
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp).verticalScroll(rememberScrollState())) {
+            Spacer(modifier = Modifier.height(16.dp))
+            ReusableTotalCard("Total Outstanding Loans", totalLoans, currency, Color(0xFFFFF8E1), Color(0xFFFF9800))
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(text = "Your Loans", style = MaterialTheme.typography.titleLarge)
-
+            Text("Your Loans", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(16.dp))
-
-            // 2. Loans List
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 loans.forEach { loan ->
-                    LoanRow(
-                        loan = loan,
-                        onEdit = {
-                            loanToEdit = loan
-                            showEditConfirmation = true
-                        },
-                        onDelete = {
-                            showDeleteConfirmation = loan
-                        }
-                    )
+                    LoanRow(loan, currency, { loanToEdit = loan; showEditConfirmation = true }, { showDeleteConfirmation = loan })
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. Filter Controls
+            // This now works because FilterControls (Step 1) accepts 'allItems'
             FilterControls(
                 startDate = startDate,
                 endDate = endDate,
@@ -126,141 +85,34 @@ fun LoansScreen(viewModel: MainViewModel) {
             )
 
             Spacer(modifier = Modifier.height(16.dp))
-
-            // 4. Transaction List
-            Text(text = "Recent Loan Transactions", style = MaterialTheme.typography.titleLarge)
-
+            Text("Recent Loan Transactions", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(16.dp))
 
-            TransactionList(
-                transactions = filteredTransactions,
-                accounts = accounts,
-                onEdit = { transaction ->
-                    transactionToEdit = transaction
-                    showTransactionDialog = true
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
+            TransactionList(filteredTransactions, accounts, currency, { transactionToEdit = it; showTransactionDialog = true })
+            Spacer(modifier = Modifier.height(80.dp))
         }
 
-        // --- DIALOG HANDLERS ---
-        if (showAddOrEditDialog) {
-            LoanFormDialog(
-                loanToEdit = loanToEdit,
-                accounts = accounts,
-                onDismiss = {
-                    showAddOrEditDialog = false
-                    loanToEdit = null
-                },
-                onConfirm = { loan, accountId ->
-                    if (loanToEdit == null && accountId != null) {
-                        viewModel.insertLoanAndPayout(loan, accountId)
-                    } else {
-                        viewModel.updateLoan(loan)
-                    }
-                    showAddOrEditDialog = false
-                    loanToEdit = null
-                }
-            )
-        }
-
-        if (showEditConfirmation && loanToEdit != null) {
-            ConfirmationDialog(
-                title = "Edit Loan",
-                message = "Are you sure you want to edit '${loanToEdit!!.name}'?",
-                icon = Icons.Default.Edit,
-                confirmText = "Edit",
-                onDismiss = {
-                    showEditConfirmation = false
-                    loanToEdit = null
-                },
-                onConfirm = {
-                    showAddOrEditDialog = true
-                    showEditConfirmation = false
-                }
-            )
-        }
-
-        if (showDeleteConfirmation != null) {
-            ConfirmationDialog(
-                title = "Delete Loan",
-                message = "Are you sure you want to delete '${showDeleteConfirmation!!.name}'? This cannot be undone.",
-                icon = Icons.Default.Delete,
-                confirmText = "Delete",
-                onDismiss = { showDeleteConfirmation = null },
-                onConfirm = {
-                    viewModel.deleteLoan(showDeleteConfirmation!!)
-                    showDeleteConfirmation = null
-                }
-            )
-        }
-
-        if (showTransactionDialog) {
-            TransactionFormDialog(
-                transactionToEdit = transactionToEdit,
-                accounts = accounts,
-                loans = loans,
-                creditCards = creditCards,
-                onDismiss = {
-                    showTransactionDialog = false
-                    transactionToEdit = null
-                },
-                onConfirm = { transaction ->
-                    if (transactionToEdit == null) {
-                        viewModel.insertTransaction(transaction)
-                    } else {
-                        viewModel.updateTransaction(transactionToEdit!!, transaction)
-                    }
-                },
-                onDelete = { transaction ->
-                    viewModel.deleteTransaction(transaction)
-                }
-            )
-        }
+        // Dialogs
+        if (showAddOrEditDialog) { LoanFormDialog(loanToEdit, accounts, { showAddOrEditDialog = false; loanToEdit = null }, { loan, acc -> if(loanToEdit == null && acc != null) viewModel.insertLoanAndPayout(loan, acc) else viewModel.updateLoan(loan); showAddOrEditDialog = false; loanToEdit = null }) }
+        if (showEditConfirmation && loanToEdit != null) { ConfirmationDialog("Edit Loan", "Edit '${loanToEdit!!.name}'?", Icons.Default.Edit, "Edit", { showAddOrEditDialog = true; showEditConfirmation = false }, { showEditConfirmation = false; loanToEdit = null }) }
+        if (showDeleteConfirmation != null) { ConfirmationDialog("Delete Loan", "Delete '${showDeleteConfirmation!!.name}'?", Icons.Default.Delete, "Delete", { viewModel.deleteLoan(showDeleteConfirmation!!); showDeleteConfirmation = null }, { showDeleteConfirmation = null }) }
+        if (showTransactionDialog) { TransactionFormDialog(transactionToEdit, accounts, loans, creditCards, { showTransactionDialog = false; transactionToEdit = null }, { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, { viewModel.deleteTransaction(it) }) }
     }
 }
 
-// ... (LoanRow function is unchanged and correct)
 @Composable
-private fun LoanRow(loan: Loan, onEdit: (Loan) -> Unit, onDelete: (Loan) -> Unit) {
-    val formattedRemaining = NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(loan.remainingAmount)
-    val formattedInitial = NumberFormat.getCurrencyInstance(Locale("en", "IN")).format(loan.initialAmount)
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+private fun LoanRow(loan: Loan, currency: String, onEdit: (Loan) -> Unit, onDelete: (Loan) -> Unit) {
+    val formattedRemaining = formatCurrency(loan.remainingAmount, currency)
+    val formattedInitial = formatCurrency(loan.initialAmount, currency)
+    Card(elevation = CardDefaults.cardElevation(2.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = loan.name, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = "from ${loan.lender}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Initial: $formattedInitial",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(loan.name, style = MaterialTheme.typography.titleMedium)
+                Text("from ${loan.lender}\nInitial: $formattedInitial", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(
-                text = formattedRemaining,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            IconButton(onClick = { onEdit(loan) }) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = { onDelete(loan) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
-            }
+            Text(formattedRemaining, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            IconButton(onClick = { onEdit(loan) }) { Icon(Icons.Default.Edit, "Edit") }
+            IconButton(onClick = { onDelete(loan) }) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
         }
     }
 }
