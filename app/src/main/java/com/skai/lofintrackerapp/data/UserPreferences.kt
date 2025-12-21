@@ -20,6 +20,7 @@ class UserPreferences(private val context: Context) {
         val APP_THEME = stringPreferencesKey("app_theme")
         val HAS_SEEN_TUTORIAL = booleanPreferencesKey("has_seen_tutorial")
         val CURRENCY = stringPreferencesKey("currency") // <-- ADDED
+        val APP_LOCK_KEY = booleanPreferencesKey("app_lock_enabled")
     }
 
     val userName: Flow<String?> = context.dataStore.data.map { it[USER_NAME] }
@@ -29,10 +30,14 @@ class UserPreferences(private val context: Context) {
     // Default to INR if not set
     val currency: Flow<String> = context.dataStore.data.map { it[CURRENCY] ?: "INR" }
 
+    val isAppLockEnabled: Flow<Boolean> = context.dataStore.data.map { it[APP_LOCK_KEY] ?: false }
+
     suspend fun saveUserName(name: String) { context.dataStore.edit { it[USER_NAME] = name } }
     suspend fun saveAppTheme(theme: String) { context.dataStore.edit { it[APP_THEME] = theme } }
     suspend fun saveHasSeenTutorial(hasSeen: Boolean) { context.dataStore.edit { it[HAS_SEEN_TUTORIAL] = hasSeen } }
 
     // --- ADDED ---
     suspend fun saveCurrency(currency: String) { context.dataStore.edit { it[CURRENCY] = currency } }
+
+    suspend fun saveAppLockEnabled(enabled: Boolean) { context.dataStore.edit { it[APP_LOCK_KEY] = enabled } }
 }

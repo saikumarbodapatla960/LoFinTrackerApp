@@ -1,43 +1,23 @@
-// In ...ui/AppShell.kt
 package com.skai.lofintrackerapp.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import com.skai.lofintrackerapp.ui.navigation.AppNavigation
+import androidx.navigation.NavController
 import com.skai.lofintrackerapp.ui.navigation.Screen
 import com.skai.lofintrackerapp.ui.screens.TransactionFormDialog
 import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
-
-val drawerItems = listOf(
-    Screen.Dashboard,
-    Screen.Income,
-    Screen.Expenses,
-    Screen.Balance,
-    Screen.Loans,
-    Screen.CreditCards,
-    Screen.Recurring,
-    Screen.Charts,
-    Screen.Settings
-)
 
 fun getIconForScreen(screen: Screen): ImageVector {
     return when (screen) {
@@ -53,20 +33,23 @@ fun getIconForScreen(screen: Screen): ImageVector {
     }
 }
 
+val drawerItems = listOf(
+    Screen.Dashboard, Screen.Income, Screen.Expenses, Screen.Balance,
+    Screen.Loans, Screen.CreditCards, Screen.Recurring, Screen.Charts, Screen.Settings
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppShell(
+    title: String,
+    userName: String? = null, // Added userName parameter
     viewModel: MainViewModel,
-    userName: String
+    navController: NavController,
+    drawerState: DrawerState,
+    currentRoute: String?,
+    content: @Composable (PaddingValues) -> Unit
 ) {
-    val navController = rememberNavController()
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
-    val currentScreen = drawerItems.find { it.route == currentRoute } ?: Screen.Dashboard
-
     var showTransactionDialog by remember { mutableStateOf(false) }
 
     val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
@@ -77,9 +60,7 @@ fun AppShell(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                // --- LOGO REMOVED FROM HERE ---
-                Spacer(modifier = Modifier.height(24.dp)) // Just some spacing
-
+                Spacer(modifier = Modifier.height(24.dp))
                 drawerItems.forEach { screen ->
                     NavigationDrawerItem(
                         icon = { Icon(getIconForScreen(screen), contentDescription = screen.title) },
@@ -89,6 +70,7 @@ fun AppShell(
                             scope.launch { drawerState.close() }
                             navController.navigate(screen.route) {
                                 launchSingleTop = true
+                                restoreState = true
                             }
                         }
                     )
@@ -100,13 +82,15 @@ fun AppShell(
             topBar = {
                 TopAppBar(
                     title = {
+                        // --- RESTORED: Column for Title + Subtitle ---
                         Column {
-                            Text(currentScreen.title)
-                            if (currentScreen == Screen.Dashboard) {
+                            Text(text = title, style = MaterialTheme.typography.titleLarge)
+                            // Only show Welcome message on Dashboard
+                            if (currentRoute == Screen.Dashboard.route && !userName.isNullOrEmpty()) {
                                 Text(
-                                    text = "Welcome, $userName!",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                                    text = "Welcome, $userName !",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                                 )
                             }
                         }
@@ -116,34 +100,19 @@ fun AppShell(
                         titleContentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     navigationIcon = {
-                        IconButton(onClick = {
-                            scope.launch { drawerState.open() }
-                        }) {
-                            Icon(
-                                Icons.Default.Menu,
-                                contentDescription = "Menu",
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, "Menu", tint = MaterialTheme.colorScheme.onPrimary)
                         }
                     },
                     actions = {
                         IconButton(onClick = { showTransactionDialog = true }) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = "Add Transaction",
-                                tint = MaterialTheme.colorScheme.onPrimary
-                            )
+                            Icon(Icons.Default.Add, "Add", tint = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
                 )
-            }
-        ) { paddingValues ->
-            AppNavigation(
-                viewModel = viewModel,
-                navController = navController,
-                modifier = Modifier.padding(paddingValues)
-            )
-        }
+            },
+            content = content
+        )
 
         if (showTransactionDialog) {
             TransactionFormDialog(
@@ -151,9 +120,7 @@ fun AppShell(
                 loans = loans,
                 creditCards = creditCards,
                 onDismiss = { showTransactionDialog = false },
-                onConfirm = { newTransaction ->
-                    viewModel.insertTransaction(newTransaction)
-                }
+                onConfirm = { viewModel.insertTransaction(it) }
             )
         }
     }

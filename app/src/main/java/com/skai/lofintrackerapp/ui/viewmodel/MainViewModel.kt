@@ -127,4 +127,10 @@ class MainViewModel(
     fun deleteTransaction(transaction: Transaction) = viewModelScope.launch {
         repository.deleteTransactionAndUpdateBalances(transaction)
     }
+
+    // Add this val:
+    val isAppLockEnabled = userPreferences.isAppLockEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    // Add this fun:
+    fun saveAppLockEnabled(enabled: Boolean) = viewModelScope.launch { userPreferences.saveAppLockEnabled(enabled) }
 }

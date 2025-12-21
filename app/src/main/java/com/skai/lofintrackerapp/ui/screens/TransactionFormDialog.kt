@@ -369,13 +369,29 @@ fun TransactionFormDialog(
                     )
                 }
 
+                // --- LOGIC FOR CREDIT CARD PAYMENT ---
                 if (category == "Credit Card Payment" && type == TransactionType.EXPENSE) {
-                    FormDropdown(
-                        label = "Select Card to Pay",
-                        options = creditCards.map { it.name },
-                        onOptionSelected = { index -> selectedCardToPayId = creditCards[index].id },
-                        selectedTextValue = creditCards.find { it.id == selectedCardToPayId }?.name ?: ""
-                    )
+                    if (creditCards.isEmpty()) {
+                        // Show warning if no cards exist
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "No Credit Cards found. Please add a Credit Card first in the Credit Cards screen.",
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    } else {
+                        FormDropdown(
+                            label = "Select Card to Pay",
+                            options = creditCards.map { it.name },
+                            onOptionSelected = { index -> selectedCardToPayId = creditCards[index].id },
+                            selectedTextValue = creditCards.find { it.id == selectedCardToPayId }?.name ?: ""
+                        )
+                    }
                 }
 
                 OutlinedTextField(

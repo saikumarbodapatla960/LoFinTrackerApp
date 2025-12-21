@@ -15,8 +15,8 @@ android {
         applicationId = "com.skai.lofintrackerapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.1"
+        versionCode = 6
+        versionName = "2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -80,5 +80,11 @@ dependencies {
     val nav_version = "2.7.7"
     implementation("androidx.navigation:navigation-compose:$nav_version")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.2")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
 
 }

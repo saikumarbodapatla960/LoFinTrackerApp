@@ -1,138 +1,99 @@
-// In ...ui.screens/TutorialScreen.kt
 package com.skai.lofintrackerapp.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
+
+data class TutorialPage(val title: String, val description: String, val icon: ImageVector, val color: Color)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TutorialScreen(onGetStarted: () -> Unit) {
+fun TutorialScreen(viewModel: MainViewModel, onFinish: () -> Unit) {
+    val scope = rememberCoroutineScope()
+
+    // --- UPDATED: Instructional Steps ---
     val pages = listOf(
-        TutorialPageData(
-            title = "Dashboard",
-            desc = "Your financial headquarters. See your total balance, loans, and a summary of income vs expenses. Tap cards to navigate quickly.",
-            icon = Icons.Default.Dashboard
+        TutorialPage(
+            "Add Your Accounts",
+            "Go to the 'Balance' page and click the '+' button to add your Bank Accounts or Cash. This is where your money lives.",
+            Icons.Default.AccountBalance,
+            Color(0xFF2196F3)
         ),
-        TutorialPageData(
-            title = "Income",
-            desc = "Track every penny you earn. Use filters to see income by date or category. View helpful charts to understand your sources.",
-            icon = Icons.Default.ArrowUpward
+        TutorialPage(
+            "Track Transactions",
+            "Use the '+' button on the Dashboard, Income, or Expense pages to log money coming in or going out. Select the correct account to keep balances updated.",
+            Icons.Default.AddCircle,
+            Color(0xFF4CAF50)
         ),
-        TutorialPageData(
-            title = "Expenses",
-            desc = "Control your spending. Log daily expenses, categorize them, and use charts to see where your money goes.",
-            icon = Icons.Default.ArrowDownward
+        TutorialPage(
+            "Manage Loans & Cards",
+            "Visit the 'Loans' or 'Credit Cards' pages to track what you owe. You can add payments later to reduce your debt automatically.",
+            Icons.Default.CreditCard,
+            Color(0xFFF44336)
         ),
-        TutorialPageData(
-            title = "Balance & Accounts",
-            desc = "Manage all your bank accounts and cash wallets in one place. See individual balances and history.",
-            icon = Icons.Default.AccountBalance
-        ),
-        TutorialPageData(
-            title = "Loans",
-            desc = "Never lose track of debts. Add loans, track payments, and see your outstanding balances instantly.",
-            icon = Icons.Default.Savings
-        ),
-        TutorialPageData(
-            title = "Credit Cards",
-            desc = "Manage credit limits and bill payments. Track how much you owe and pay bills directly from your accounts.",
-            icon = Icons.Default.CreditCard
-        ),
-        TutorialPageData(
-            title = "Scheduled Payments",
-            desc = "Set up recurring bills or income (like Salary or Rent). The app will remind you and pre-fill transactions for you.",
-            icon = Icons.Default.EventRepeat
-        ),
-        TutorialPageData(
-            title = "Income vs. Expense",
-            desc = "The big picture. Compare your earnings against your spending with clear bar charts to stay profitable.",
-            icon = Icons.Default.BarChart
+        TutorialPage(
+            "Set Reminders",
+            "Have a monthly bill? Go to 'Recurring Payments' and set a schedule. We will notify you 8 hours before it's due.",
+            Icons.Default.Alarm,
+            Color(0xFFFF9800)
         )
     )
 
     val pagerState = rememberPagerState(pageCount = { pages.size })
-    val scope = rememberCoroutineScope()
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-
-            // --- PAGER ---
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f)
-            ) { pageIndex ->
-                val page = pages[pageIndex]
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = page.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(100.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Text(
-                        text = page.title,
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = page.desc,
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { scope.launch { viewModel.saveHasSeenTutorial(); onFinish() } }) { Text("Skip") }
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { pageIndex ->
+            val page = pages[pageIndex]
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(modifier = Modifier.size(120.dp).clip(CircleShape).background(page.color.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
+                    Icon(imageVector = page.icon, contentDescription = null, modifier = Modifier.size(64.dp), tint = page.color)
                 }
-            }
-
-            // --- NAVIGATION BUTTONS ---
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Dots Indicator
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    repeat(pages.size) { iteration ->
-                        val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                        Surface(modifier = Modifier.size(8.dp), shape = MaterialTheme.shapes.small, color = color) {}
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        if (pagerState.currentPage < pages.size - 1) {
-                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                        } else {
-                            onGetStarted()
-                        }
-                    }
-                ) {
-                    Text(if (pagerState.currentPage < pages.size - 1) "Next" else "Get Started")
-                }
+                Spacer(modifier = Modifier.height(32.dp))
+                Text(text = page.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(text = page.description, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
             }
         }
+        Spacer(modifier = Modifier.weight(1f))
+        Row(horizontalArrangement = Arrangement.Center) {
+            repeat(pages.size) { iteration ->
+                val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                Box(modifier = Modifier.padding(4.dp).clip(CircleShape).background(color).size(if (pagerState.currentPage == iteration) 12.dp else 8.dp))
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(
+            onClick = {
+                scope.launch {
+                    if (pagerState.currentPage < pages.size - 1) pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    else { viewModel.saveHasSeenTutorial(); onFinish() }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(50.dp)
+        ) {
+            Text(if (pagerState.currentPage == pages.size - 1) "Start Using App" else "Next")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
-
-data class TutorialPageData(val title: String, val desc: String, val icon: ImageVector)
