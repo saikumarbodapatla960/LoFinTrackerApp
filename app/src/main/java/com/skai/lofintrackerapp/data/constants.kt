@@ -8,7 +8,10 @@ val DEFAULT_EXPENSE_CATEGORIES = listOf(
     "Utilities",
     "Transport",
     "Loan Repayment",
-    "Credit Card Payment"
+    "Credit Card Payment",
+    "Entertainment",
+    "Health",
+    "Other"
 )
-val DEFAULT_INCOME_CATEGORIES = listOf("Salary", "Freelance", "Gift", "Investment")
-val DEFAULT_PAYMENT_MODES = listOf("UPI", "Cash", "Credit Card", "Debit Card", "NEFT")
+val DEFAULT_INCOME_CATEGORIES = listOf("Salary", "Freelance", "Gift", "Investment", "Other")
+val DEFAULT_PAYMENT_MODES = listOf("UPI", "Cash", "Credit Card", "Debit Card", "NEFT", "Other")
