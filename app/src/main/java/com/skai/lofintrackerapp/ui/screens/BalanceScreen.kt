@@ -24,9 +24,10 @@ import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 
 @Composable
 fun BalanceScreen(viewModel: MainViewModel) {
-    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val totalBalance by viewModel.totalBalance.collectAsStateWithLifecycle()
-    val currency by viewModel.currency.collectAsStateWithLifecycle()
+    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val totalBalance by viewModel.totalBalance.collectAsStateWithLifecycle(initialValue = 0.0)
+    val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
+    val isSortDesc by viewModel.sortDescending.collectAsStateWithLifecycle(initialValue = true)
 
     var showAddOrEditDialog by remember { mutableStateOf(false) }
     var showUndeletableWarning by remember { mutableStateOf(false) }
@@ -36,23 +37,24 @@ fun BalanceScreen(viewModel: MainViewModel) {
 
     var showTransactionDialog by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
-    val loans by viewModel.allLoans.collectAsStateWithLifecycle()
-    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
+    val loans by viewModel.allLoans.collectAsStateWithLifecycle(initialValue = emptyList())
+    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle(initialValue = emptyList())
 
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
     val endDate by viewModel.endDate.collectAsStateWithLifecycle()
-    val selectedAccountIds by viewModel.selectedAccountIds.collectAsStateWithLifecycle()
-    val filteredTransactions by viewModel.filteredBalanceTransactions.collectAsStateWithLifecycle()
+    val selectedAccountIds by viewModel.selectedAccountIds.collectAsStateWithLifecycle(initialValue = emptySet())
+    val filteredTransactions by viewModel.filteredBalanceTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
     val filterItems = remember(accounts) { accounts.map { FilterSelectionItem(id = it.id, name = it.name) } }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         floatingActionButton = {
             FloatingActionButton(onClick = { accountToEdit = null; showAddOrEditDialog = true }, containerColor = FabGreen) { Icon(Icons.Default.Add, "Add Account") }
         },
-        contentWindowInsets = WindowInsets(0.dp)
+        contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp).verticalScroll(rememberScrollState())) {
-            Spacer(modifier = Modifier.height(16.dp))
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+            // Spacer removed from the top
             ReusableTotalCard("Total Balance", totalBalance, currency, Color(0xFFE3F2FD), Color(0xFF2196F3))
             Spacer(modifier = Modifier.height(16.dp))
             Text("Your Accounts", style = MaterialTheme.typography.titleLarge)
@@ -66,7 +68,6 @@ fun BalanceScreen(viewModel: MainViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // FIX: Using Named Arguments to prevent mismatch
             FilterControls(
                 startDate = startDate,
                 endDate = endDate,
@@ -80,18 +81,51 @@ fun BalanceScreen(viewModel: MainViewModel) {
             )
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Recent Transactions", style = MaterialTheme.typography.titleLarge)
-            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Recent Transactions", style = MaterialTheme.typography.titleLarge)
+                IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                    Icon(
+                        imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        contentDescription = "Toggle Sort Order",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
 
-            TransactionList(filteredTransactions, accounts, currency, { transactionToEdit = it; showTransactionDialog = true })
-            Spacer(modifier = Modifier.height(80.dp))
+            TransactionList(
+                transactions = filteredTransactions, 
+                accounts = accounts, 
+                creditCards = creditCards, 
+                currencyCode = currency, 
+                onEdit = { transaction ->
+                    transactionToEdit = transaction
+                    showTransactionDialog = true
+                }
+            )
+            Spacer(modifier = Modifier.height(80.dp)) // Spacer at bottom for FAB
         }
 
         if (showAddOrEditDialog) AccountFormDialog(accountToEdit, { showAddOrEditDialog = false; accountToEdit = null }, { if (accountToEdit == null) viewModel.insertAccount(it) else viewModel.updateAccount(it); showAddOrEditDialog = false; accountToEdit = null })
         if (showEditConfirmation && accountToEdit != null) ConfirmationDialog("Edit Account", "Edit '${accountToEdit!!.name}'?", Icons.Default.Edit, "Edit", { showAddOrEditDialog = true; showEditConfirmation = false }, { showEditConfirmation = false; accountToEdit = null })
         if (showDeleteConfirmation != null) ConfirmationDialog("Delete Account", "Delete '${showDeleteConfirmation!!.name}'?", Icons.Default.Delete, "Delete", { viewModel.deleteAccount(showDeleteConfirmation!!); showDeleteConfirmation = null }, { showDeleteConfirmation = null })
         if (showUndeletableWarning) SimpleAlertDialog("Cannot Delete", "The default 'Cash' account cannot be deleted.", { showUndeletableWarning = false })
-        if (showTransactionDialog) TransactionFormDialog(transactionToEdit, accounts, loans, creditCards, { showTransactionDialog = false; transactionToEdit = null }, { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, { viewModel.deleteTransaction(it) })
+        if (showTransactionDialog) {
+            TransactionFormDialog(
+                transactionToEdit = transactionToEdit,
+                accounts = accounts,
+                loans = loans,
+                creditCards = creditCards,
+                onDismiss = { showTransactionDialog = false; transactionToEdit = null },
+                onConfirm = { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) },
+                onDelete = { viewModel.deleteTransaction(it) },
+                onAddScheduled = { viewModel.insertScheduledTransaction(it) }
+            )
+        }
     }
 }
 

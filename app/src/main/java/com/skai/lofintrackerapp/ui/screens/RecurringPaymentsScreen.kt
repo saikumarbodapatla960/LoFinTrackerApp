@@ -6,7 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.* // <-- Import necessary for 'by remember'
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,12 +24,11 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun RecurringPaymentsScreen(viewModel: MainViewModel) {
-    // These calls rely on MainViewModel having these fields (See step 4 if this errors)
-    val scheduledItems by viewModel.allScheduledTransactions.collectAsStateWithLifecycle()
-    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val loans by viewModel.allLoans.collectAsStateWithLifecycle()
-    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
-    val currency by viewModel.currency.collectAsStateWithLifecycle()
+    val scheduledItems by viewModel.allScheduledTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
+    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loans by viewModel.allLoans.collectAsStateWithLifecycle(initialValue = emptyList())
+    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle(initialValue = emptyList())
+    val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
 
     var showAddDialog by remember { mutableStateOf(false) }
     var itemToEdit by remember { mutableStateOf<ScheduledTransaction?>(null) }
@@ -40,24 +39,30 @@ fun RecurringPaymentsScreen(viewModel: MainViewModel) {
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }, containerColor = FabGreen) {
+            FloatingActionButton(onClick = { 
+                itemToEdit = null
+                showAddDialog = true 
+            }, containerColor = FabGreen) {
                 Icon(Icons.Default.Add, "Add Scheduled")
             }
         },
-        contentWindowInsets = WindowInsets(0.dp)
+        contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
+        Column(modifier = Modifier.padding(padding).padding(horizontal = 16.dp).fillMaxSize()) {
+            // Removed top Spacer for cleaner look
             Text("Scheduled Payments", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(16.dp))
 
             if (scheduledItems.isEmpty()) {
-                Text("No recurring payments set up.", style = MaterialTheme.typography.bodyLarge)
+                Text("No recurring payments set up. Click '+' to add one!", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(scheduledItems) { item ->
                     ScheduledItemRow(
                         item = item,
+                        accountName = accounts.find { it.id == item.accountId }?.name,
+                        cardName = creditCards.find { it.id == item.creditCardId }?.name,
                         currencyCode = currency,
                         onEdit = { itemToEdit = item; showAddDialog = true },
                         onDelete = { viewModel.deleteScheduledTransaction(item) },
@@ -67,9 +72,9 @@ fun RecurringPaymentsScreen(viewModel: MainViewModel) {
                                 amount = item.amount,
                                 category = item.category,
                                 accountId = item.accountId,
-                                paymentMode = null,
-                                creditCardId = null,
-                                loanId = null,
+                                creditCardId = item.creditCardId,
+                                loanId = item.loanId,
+                                paymentMode = item.paymentMode,
                                 date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
                                 description = item.description
                             )
@@ -80,6 +85,7 @@ fun RecurringPaymentsScreen(viewModel: MainViewModel) {
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 
@@ -87,6 +93,8 @@ fun RecurringPaymentsScreen(viewModel: MainViewModel) {
         RecurringTransactionFormDialog(
             itemToEdit = itemToEdit,
             accounts = accounts,
+            loans = loans,
+            creditCards = creditCards,
             onDismiss = { showAddDialog = false; itemToEdit = null },
             onConfirm = {
                 if (itemToEdit == null) viewModel.insertScheduledTransaction(it)
@@ -103,17 +111,25 @@ fun RecurringPaymentsScreen(viewModel: MainViewModel) {
             creditCards = creditCards,
             onDismiss = { showPayDialog = false },
             onConfirm = { tx ->
-                viewModel.insertTransaction(tx)
-                // Advance date by 1 month
-                val nextDate = try {
-                    LocalDate.parse(itemBeingPaid!!.nextDueDate).plusMonths(1).toString()
-                } catch (e: Exception) {
-                    LocalDate.now().plusMonths(1).toString()
+                val error = viewModel.insertTransaction(tx)
+                if (error == null) {
+                    val nextDate = try {
+                        val currentDue = LocalDate.parse(itemBeingPaid!!.nextDueDate)
+                        when (itemBeingPaid!!.frequency) {
+                            "Daily" -> currentDue.plusDays(1).toString()
+                            "Weekly" -> currentDue.plusWeeks(1).toString()
+                            "Yearly" -> currentDue.plusYears(1).toString()
+                            else -> currentDue.plusMonths(1).toString()
+                        }
+                    } catch (e: Exception) {
+                        LocalDate.now().plusMonths(1).toString()
+                    }
+                    viewModel.updateScheduledTransaction(itemBeingPaid!!.copy(nextDueDate = nextDate))
+                    showPayDialog = false
                 }
-                viewModel.updateScheduledTransaction(itemBeingPaid!!.copy(nextDueDate = nextDate))
-                showPayDialog = false
-                null
-            }
+                error
+            },
+            onAddScheduled = { viewModel.insertScheduledTransaction(it) }
         )
     }
 }
@@ -121,28 +137,33 @@ fun RecurringPaymentsScreen(viewModel: MainViewModel) {
 @Composable
 fun ScheduledItemRow(
     item: ScheduledTransaction,
+    accountName: String?,
+    cardName: String?,
     currencyCode: String,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onPay: () -> Unit
 ) {
-    Card {
+    Card(elevation = CardDefaults.cardElevation(2.dp)) {
         Row(
             modifier = Modifier.padding(16.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(item.description, style = MaterialTheme.typography.titleMedium)
-                Text("${item.frequency} - Due: ${item.nextDueDate}", style = MaterialTheme.typography.bodySmall)
+                Text(item.description, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val source = accountName ?: cardName ?: "No Source"
+                Text("Source: $source | ${item.frequency}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Next Due: ${item.nextDueDate}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     if (item.amount > 0.0) formatCurrency(item.amount, currencyCode) else "Variable Amount",
-                    color = if(item.type == TransactionType.INCOME) Color.Green else Color.Red,
-                    fontWeight = FontWeight.Bold
+                    color = if(item.type == TransactionType.INCOME) Color(0xFF4CAF50) else Color(0xFFF44336),
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge
                 )
             }
             Row {
-                IconButton(onClick = onPay) { Icon(Icons.Default.CheckCircle, "Pay Now", tint = FabGreen) }
+                IconButton(onClick = onPay) { Icon(Icons.Default.CheckCircle, "Pay Now", tint = Color(0xFF4CAF50)) }
                 IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit") }
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
             }

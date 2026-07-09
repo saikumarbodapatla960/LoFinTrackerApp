@@ -3,10 +3,12 @@ package com.skai.lofintrackerapp.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.* // FIX: Added
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -19,18 +21,18 @@ import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 
 @Composable
 fun IncomeScreen(viewModel: MainViewModel) {
-    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val incomeTransactions by viewModel.filteredIncomeTransactions.collectAsStateWithLifecycle()
+    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val incomeTransactions by viewModel.filteredIncomeTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
     val endDate by viewModel.endDate.collectAsStateWithLifecycle()
-    val selectedCategories by viewModel.selectedIncomeCategories.collectAsStateWithLifecycle()
-    val currency by viewModel.currency.collectAsStateWithLifecycle()
+    val selectedCategories by viewModel.selectedIncomeCategories.collectAsStateWithLifecycle(initialValue = emptySet())
+    val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
+    val isSortDesc by viewModel.sortDescending.collectAsStateWithLifecycle(initialValue = true)
     val allCategories = DEFAULT_INCOME_CATEGORIES
 
-    val loans by viewModel.allLoans.collectAsStateWithLifecycle()
-    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
+    val loans by viewModel.allLoans.collectAsStateWithLifecycle(initialValue = emptyList())
+    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle(initialValue = emptyList())
 
-    // FIX: Types and Imports now correct
     var showTransactionDialog by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
 
@@ -61,12 +63,47 @@ fun IncomeScreen(viewModel: MainViewModel) {
             }
         }
 
-        Text(text = "Income Transactions", style = MaterialTheme.typography.titleLarge)
-        TransactionList(incomeTransactions, accounts, currency, { transactionToEdit = it; showTransactionDialog = true })
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Income Transactions", style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                Icon(
+                    imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    contentDescription = "Toggle Sort Order",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        TransactionList(
+            transactions = incomeTransactions, 
+            accounts = accounts, 
+            creditCards = creditCards, 
+            currencyCode = currency, 
+            onEdit = { transaction ->
+                transactionToEdit = transaction
+                showTransactionDialog = true
+            }
+        )
         Spacer(modifier = Modifier.height(16.dp))
     }
 
     if (showTransactionDialog) {
-        TransactionFormDialog(transactionToEdit, accounts, loans, creditCards, { showTransactionDialog = false; transactionToEdit = null }, { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, { viewModel.deleteTransaction(it) })
+        TransactionFormDialog(
+            transactionToEdit = transactionToEdit,
+            accounts = accounts,
+            loans = loans,
+            creditCards = creditCards,
+            onDismiss = { 
+                showTransactionDialog = false
+                transactionToEdit = null 
+            },
+            onConfirm = { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) },
+            onDelete = { viewModel.deleteTransaction(it) },
+            onAddScheduled = { viewModel.insertScheduledTransaction(it) }
+        )
     }
 }

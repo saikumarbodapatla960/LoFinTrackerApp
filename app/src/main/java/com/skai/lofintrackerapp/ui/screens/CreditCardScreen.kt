@@ -20,19 +20,19 @@ import com.skai.lofintrackerapp.ui.common.ReusableTotalCard
 import com.skai.lofintrackerapp.ui.common.formatCurrency
 import com.skai.lofintrackerapp.ui.theme.FabGreen
 import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
-import com.skai.lofintrackerapp.ui.screens.FilterSelectionItem // <-- IMPORT
 
 @Composable
 fun CreditCardScreen(viewModel: MainViewModel) {
-    val cards by viewModel.allCreditCards.collectAsStateWithLifecycle()
-    val totalDebt by viewModel.totalCreditCardDebt.collectAsStateWithLifecycle()
-    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val currency by viewModel.currency.collectAsStateWithLifecycle()
+    val cards by viewModel.allCreditCards.collectAsStateWithLifecycle(initialValue = emptyList())
+    val totalDebt by viewModel.totalCreditCardDebt.collectAsStateWithLifecycle(initialValue = 0.0)
+    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
+    val isSortDesc by viewModel.sortDescending.collectAsStateWithLifecycle(initialValue = true)
 
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
     val endDate by viewModel.endDate.collectAsStateWithLifecycle()
-    val selectedCreditCardIds by viewModel.selectedCreditCardIds.collectAsStateWithLifecycle()
-    val filteredTransactions by viewModel.filteredCreditCardTransactions.collectAsStateWithLifecycle()
+    val selectedCreditCardIds by viewModel.selectedCreditCardIds.collectAsStateWithLifecycle(initialValue = emptySet())
+    val filteredTransactions by viewModel.filteredCreditCardTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
 
     var showAddOrEditDialog by remember { mutableStateOf(false) }
     var cardToEdit by remember { mutableStateOf<CreditCard?>(null) }
@@ -40,21 +40,21 @@ fun CreditCardScreen(viewModel: MainViewModel) {
     var showDeleteConfirmation by remember { mutableStateOf<CreditCard?>(null) }
     var showTransactionDialog by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
-    val loans by viewModel.allLoans.collectAsStateWithLifecycle()
+    val loans by viewModel.allLoans.collectAsStateWithLifecycle(initialValue = emptyList())
 
-    // Create filter items
     val filterItems = remember(cards) { cards.map { FilterSelectionItem(id = it.id, name = it.name) } }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         floatingActionButton = {
             FloatingActionButton(onClick = { cardToEdit = null; showAddOrEditDialog = true }, containerColor = FabGreen) {
                 Icon(Icons.Default.Add, "Add Credit Card")
             }
         },
-        contentWindowInsets = WindowInsets(0.dp)
+        contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp).verticalScroll(rememberScrollState())) {
-            Spacer(modifier = Modifier.height(16.dp))
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+            // Removed top Spacer for cleaner look
             ReusableTotalCard("Total Credit Card Debt", totalDebt, currency, Color(0xFFFDECEA), Color(0xFFF44336))
             Spacer(modifier = Modifier.height(16.dp))
             Text("Your Cards", style = MaterialTheme.typography.titleLarge)
@@ -67,7 +67,6 @@ fun CreditCardScreen(viewModel: MainViewModel) {
             }
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Filter Controls (Fixed via Step 1)
             FilterControls(
                 startDate = startDate,
                 endDate = endDate,
@@ -81,18 +80,47 @@ fun CreditCardScreen(viewModel: MainViewModel) {
             )
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Recent Card Transactions", style = MaterialTheme.typography.titleLarge)
-            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Recent Card Transactions", style = MaterialTheme.typography.titleLarge)
+                IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                    Icon(
+                        imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        contentDescription = "Toggle Sort Order",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
 
-            TransactionList(filteredTransactions, accounts, currency, { transactionToEdit = it; showTransactionDialog = true })
+            TransactionList(
+                transactions = filteredTransactions, 
+                accounts = accounts, 
+                creditCards = cards, 
+                currencyCode = currency, 
+                onEdit = { transactionToEdit = it; showTransactionDialog = true }
+            )
             Spacer(modifier = Modifier.height(64.dp))
         }
 
-        // Dialogs
         if (showAddOrEditDialog) { CreditCardFormDialog(cardToEdit, { showAddOrEditDialog = false; cardToEdit = null }, { if (cardToEdit == null) viewModel.insertCreditCard(it) else viewModel.updateCreditCard(it); showAddOrEditDialog = false; cardToEdit = null }) }
         if (showEditConfirmation && cardToEdit != null) { ConfirmationDialog("Edit Credit Card", "Edit '${cardToEdit!!.name}'?", Icons.Default.Edit, "Edit", { showAddOrEditDialog = true; showEditConfirmation = false }, { showEditConfirmation = false; cardToEdit = null }) }
         if (showDeleteConfirmation != null) { ConfirmationDialog("Delete Credit Card", "Delete '${showDeleteConfirmation!!.name}'?", Icons.Default.Delete, "Delete", { viewModel.deleteCreditCard(showDeleteConfirmation!!); showDeleteConfirmation = null }, { showDeleteConfirmation = null }) }
-        if (showTransactionDialog) { TransactionFormDialog(transactionToEdit, accounts, loans, cards, { showTransactionDialog = false; transactionToEdit = null }, { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, { viewModel.deleteTransaction(it) }) }
+        if (showTransactionDialog) { 
+            TransactionFormDialog(
+                transactionToEdit = transactionToEdit, 
+                accounts = accounts, 
+                loans = loans, 
+                creditCards = cards, 
+                onDismiss = { showTransactionDialog = false; transactionToEdit = null }, 
+                onConfirm = { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, 
+                onDelete = { viewModel.deleteTransaction(it) },
+                onAddScheduled = { viewModel.insertScheduledTransaction(it) }
+            ) 
+        }
     }
 }
 
@@ -104,11 +132,23 @@ private fun CreditCardRow(card: CreditCard, currency: String, onEdit: (CreditCar
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(card.name, style = MaterialTheme.typography.titleMedium)
-                Text("Limit: $formattedLimit\nDue: ${card.dueDate}th | Stmt: ${card.statementDate}th", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Limit: $formattedLimit", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Statement Day: ${card.statementDate}${getDaySuffix(card.statementDate)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Due Day: ${card.dueDate}${getDaySuffix(card.dueDate)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(formattedOwed, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = if (card.amountOwed > 0) Color(0xFFF44336) else MaterialTheme.colorScheme.onSurface)
             IconButton(onClick = { onEdit(card) }) { Icon(Icons.Default.Edit, "Edit") }
             IconButton(onClick = { onDelete(card) }) { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
         }
+    }
+}
+
+private fun getDaySuffix(day: Int): String {
+    return if (day in 11..13) "th"
+    else when (day % 10) {
+        1 -> "st"
+        2 -> "nd"
+        3 -> "rd"
+        else -> "th"
     }
 }

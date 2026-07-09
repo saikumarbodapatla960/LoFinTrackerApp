@@ -23,6 +23,7 @@ import com.skai.lofintrackerapp.data.db.CreditCard
 import com.skai.lofintrackerapp.data.db.Loan
 import com.skai.lofintrackerapp.data.db.Transaction
 import com.skai.lofintrackerapp.data.db.TransactionType
+import com.skai.lofintrackerapp.data.db.ScheduledTransaction
 import com.skai.lofintrackerapp.data.DEFAULT_EXPENSE_CATEGORIES
 import com.skai.lofintrackerapp.data.DEFAULT_INCOME_CATEGORIES
 import com.skai.lofintrackerapp.data.DEFAULT_PAYMENT_MODES
@@ -86,7 +87,8 @@ fun TransactionFormDialog(
     creditCards: List<CreditCard>,
     onDismiss: () -> Unit,
     onConfirm: suspend (Transaction) -> String?,
-    onDelete: suspend (Transaction) -> Unit = {}
+    onDelete: suspend (Transaction) -> Unit = {},
+    onAddScheduled: (ScheduledTransaction) -> Unit = {}
 ) {
     // --- STATE ---
     var type by remember { mutableStateOf(transactionToEdit?.type ?: TransactionType.EXPENSE) }
@@ -112,6 +114,13 @@ fun TransactionFormDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
+    // EMI States
+    var showEmiChoiceDialog by remember { mutableStateOf(false) }
+    var showEmiDetailsDialog by remember { mutableStateOf(false) }
+    var emiMonths by remember { mutableStateOf("12") }
+    var emiAmountValue by remember { mutableStateOf("") }
+    var savedTxForEmi by remember { mutableStateOf<Transaction?>(null) }
+
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
@@ -131,18 +140,13 @@ fun TransactionFormDialog(
     }
 
     // --- FILTER VALID SOURCES ---
-    // This ensures the dropdown ONLY shows valid options
     val currentFundingOptions = remember(allFundingSources, type, category) {
         if (type == TransactionType.INCOME) {
-            // RULE: Income can only go to Accounts
             allFundingSources.filter { it.type == "ACCOUNT" }
         } else {
-            // Expense
             if (category == "Loan Repayment" || category == "Credit Card Payment") {
-                // RULE: Debt payments must come from Accounts
                 allFundingSources.filter { it.type == "ACCOUNT" }
             } else {
-                // Normal Expense: Can use Account OR Card
                 allFundingSources
             }
         }
@@ -162,10 +166,8 @@ fun TransactionFormDialog(
     val categories = if (type == TransactionType.INCOME) DEFAULT_INCOME_CATEGORIES else DEFAULT_EXPENSE_CATEGORIES
 
     // --- RESET LOGIC ---
-    // This is the fix: We must clear the selection if it becomes invalid for the new Type/Category
     LaunchedEffect(currentFundingOptions) {
         if (selectedFundingSource != null) {
-            // If the currently selected item is NOT in the valid list anymore, clear it
             val isValid = currentFundingOptions.any { it.id == selectedFundingSource?.id }
             if (!isValid) {
                 selectedFundingSource = null
@@ -209,7 +211,7 @@ fun TransactionFormDialog(
             type = newType
             category = ""
             paymentMode = ""
-            selectedFundingSource = null // Explicitly clear the account/card
+            selectedFundingSource = null
             selectedLoanId = null
             selectedCardToPayId = null
             transactionError = null
@@ -283,7 +285,7 @@ fun TransactionFormDialog(
                     Text(text = transactionError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
 
-                // Tabs (With RESET logic)
+                // Tabs
                 TabRow(selectedTabIndex = type.ordinal) {
                     Tab(
                         selected = type == TransactionType.EXPENSE,
@@ -340,7 +342,7 @@ fun TransactionFormDialog(
                 // --- ACCOUNT/CARD DROPDOWN ---
                 FormDropdown(
                     label = if (type == TransactionType.INCOME) "To Account" else "From",
-                    options = currentFundingOptions.map { it.name }, // Use the filtered list
+                    options = currentFundingOptions.map { it.name },
                     onOptionSelected = { index ->
                         selectedFundingSource = currentFundingOptions[index]
                     },
@@ -369,10 +371,8 @@ fun TransactionFormDialog(
                     )
                 }
 
-                // --- LOGIC FOR CREDIT CARD PAYMENT ---
                 if (category == "Credit Card Payment" && type == TransactionType.EXPENSE) {
                     if (creditCards.isEmpty()) {
-                        // Show warning if no cards exist
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
@@ -433,7 +433,7 @@ fun TransactionFormDialog(
                                     type = type,
                                     amount = amount.toDoubleOrNull() ?: 0.0,
                                     category = category,
-                                    accountId = if (source.type == "ACCOUNT") source.id.removePrefix("account-").toLong() else 0L,
+                                    accountId = if (source.type == "ACCOUNT") source.id.removePrefix("account-").toLong() else null,
                                     creditCardId = if (source.type == "CARD") source.id.removePrefix("card-").toLong() else null,
                                     paymentMode = if (type == TransactionType.EXPENSE) paymentMode else null,
                                     loanId = if (category == "Loan Repayment") selectedLoanId else if (category == "Credit Card Payment") selectedCardToPayId else null,
@@ -443,7 +443,17 @@ fun TransactionFormDialog(
 
                                 val error = onConfirm(newTransaction)
                                 if (error == null) {
-                                    onDismiss()
+                                    // Check for EMI Eligibility
+                                    if (newTransaction.type == TransactionType.EXPENSE && 
+                                        newTransaction.creditCardId != null && 
+                                        newTransaction.amount > 1000 &&
+                                        transactionToEdit == null) {
+                                        savedTxForEmi = newTransaction
+                                        showEmiChoiceDialog = true
+                                        saveInProgress = false
+                                    } else {
+                                        onDismiss()
+                                    }
                                 } else {
                                     transactionError = error
                                     saveInProgress = false
@@ -461,6 +471,77 @@ fun TransactionFormDialog(
                 }
             }
         }
+    }
+
+    if (showEmiChoiceDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmiChoiceDialog = false; onDismiss() },
+            title = { Text("Convert to EMI?") },
+            text = { Text("This is a credit card transaction over 1000. Would you like to pay in full or convert to monthly EMI?") },
+            confirmButton = {
+                Button(onClick = { 
+                    showEmiChoiceDialog = false
+                    showEmiDetailsDialog = true 
+                }) { Text("Convert to EMI") }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showEmiChoiceDialog = false
+                    onDismiss() 
+                }) { Text("Pay in Full") }
+            }
+        )
+    }
+
+    if (showEmiDetailsDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmiDetailsDialog = false; onDismiss() },
+            title = { Text("EMI Details") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = emiMonths,
+                        onValueChange = { emiMonths = it },
+                        label = { Text("Number of Months") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    OutlinedTextField(
+                        value = emiAmountValue,
+                        onValueChange = { emiAmountValue = it },
+                        label = { Text("Monthly EMI Amount") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = emiMonths.toIntOrNull() != null && emiAmountValue.toDoubleOrNull() != null,
+                    onClick = {
+                        val monthlyAmount = emiAmountValue.toDoubleOrNull() ?: 0.0
+                        val nextDue = LocalDate.now().plusMonths(1).format(dbFormatter)
+                        
+                        onAddScheduled(ScheduledTransaction(
+                            type = TransactionType.EXPENSE,
+                            amount = monthlyAmount,
+                            category = "Credit Card Payment",
+                            accountId = accounts.firstOrNull { it.type != AccountType.CASH }?.id ?: accounts.firstOrNull()?.id,
+                            creditCardId = null,
+                            loanId = savedTxForEmi?.creditCardId,
+                            paymentMode = "Transfer",
+                            description = "EMI: ${savedTxForEmi?.description} (${emiMonths} months)",
+                            frequency = "Monthly",
+                            nextDueDate = nextDue
+                        ))
+                        
+                        showEmiDetailsDialog = false
+                        onDismiss()
+                    }
+                ) { Text("Save EMI Bill") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmiDetailsDialog = false; onDismiss() }) { Text("Cancel") }
+            }
+        )
     }
 
     if (showDeleteConfirmation && transactionToEdit != null) {

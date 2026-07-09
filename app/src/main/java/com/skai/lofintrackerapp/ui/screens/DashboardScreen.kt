@@ -25,15 +25,16 @@ import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 
 @Composable
 fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
-    val totalBalance by viewModel.totalBalance.collectAsStateWithLifecycle()
-    val totalLoans by viewModel.totalLoans.collectAsStateWithLifecycle()
-    val totalFilteredIncome by viewModel.totalFilteredIncome.collectAsStateWithLifecycle()
-    val totalFilteredExpense by viewModel.totalFilteredExpense.collectAsStateWithLifecycle()
-    val transactions by viewModel.filteredTransactions.collectAsStateWithLifecycle()
-    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val loans by viewModel.allLoans.collectAsStateWithLifecycle()
-    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
-    val currency by viewModel.currency.collectAsStateWithLifecycle() // Currency
+    val totalBalance by viewModel.totalBalance.collectAsStateWithLifecycle(initialValue = 0.0)
+    val totalDebt by viewModel.totalDebt.collectAsStateWithLifecycle(initialValue = 0.0)
+    val totalFilteredIncome by viewModel.totalFilteredIncome.collectAsStateWithLifecycle(initialValue = 0.0)
+    val totalFilteredExpense by viewModel.totalFilteredExpense.collectAsStateWithLifecycle(initialValue = 0.0)
+    val transactions by viewModel.filteredTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
+    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loans by viewModel.allLoans.collectAsStateWithLifecycle(initialValue = emptyList())
+    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle(initialValue = emptyList())
+    val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
+    val isSortDesc by viewModel.sortDescending.collectAsStateWithLifecycle(initialValue = true)
 
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
     val endDate by viewModel.endDate.collectAsStateWithLifecycle()
@@ -46,7 +47,7 @@ fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             SummaryCard("Total Balance", totalBalance, currency, Icons.Default.AccountBalance, Color(0xFF2196F3), { navController.navigate(Screen.Balance.route) }, Modifier.weight(1f))
-            SummaryCard("Total Loans", totalLoans, currency, Icons.Default.CreditCard, Color(0xFFFF9800), { navController.navigate(Screen.Loans.route) }, Modifier.weight(1f))
+            SummaryCard("Total Debt", totalDebt, currency, Icons.Default.CreditCard, Color(0xFFFF9800), { navController.navigate(Screen.Loans.route) }, Modifier.weight(1f))
         }
         Spacer(modifier = Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -76,8 +77,21 @@ fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Text("Recent Transactions", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Recent Transactions", style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                Icon(
+                    imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    contentDescription = "Toggle Sort Order",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (transactions.isEmpty()) {
             Text("No transactions for this period. Click '+' to add one!", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -85,7 +99,8 @@ fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
             TransactionList(
                 transactions = transactions,
                 accounts = accounts,
-                currencyCode = currency, // Pass Currency
+                creditCards = creditCards,
+                currencyCode = currency,
                 onEdit = { transaction ->
                     transactionToEdit = transaction
                     showTransactionDialog = true
@@ -103,7 +118,8 @@ fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
             creditCards = creditCards,
             onDismiss = { showTransactionDialog = false; transactionToEdit = null },
             onConfirm = { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) },
-            onDelete = { viewModel.deleteTransaction(it) }
+            onDelete = { viewModel.deleteTransaction(it) },
+            onAddScheduled = { viewModel.insertScheduledTransaction(it) }
         )
     }
 }

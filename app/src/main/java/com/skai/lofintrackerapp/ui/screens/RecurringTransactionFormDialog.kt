@@ -13,11 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.skai.lofintrackerapp.data.db.Account
-import com.skai.lofintrackerapp.data.db.ScheduledTransaction
-import com.skai.lofintrackerapp.data.db.TransactionType
+import com.skai.lofintrackerapp.data.db.*
 import com.skai.lofintrackerapp.data.DEFAULT_EXPENSE_CATEGORIES
 import com.skai.lofintrackerapp.data.DEFAULT_INCOME_CATEGORIES
+import com.skai.lofintrackerapp.data.DEFAULT_PAYMENT_MODES
 import com.skai.lofintrackerapp.ui.common.FormDropdown
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -26,19 +25,18 @@ import java.time.format.DateTimeParseException
 import java.time.Instant
 import java.time.ZoneId
 
-// --- DATE HELPER FUNCTIONS (Same as TransactionForm) ---
+// --- DATE HELPER FUNCTIONS ---
 private val dbFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val displayFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy")
 private val dateRegex = Regex("^\\d{2}-\\d{2}-\\d{4}$")
 
-private fun getTodayDateMillis(): Long = LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+private fun getNextMonthDateMillis(): Long {
+    val nextMonth = LocalDate.now().plusMonths(1)
+    return nextMonth.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+}
 
 private fun Long.toDisplayDateString(): String {
     return Instant.ofEpochMilli(this).atZone(ZoneId.of("UTC")).toLocalDate().format(displayFormatter)
-}
-
-private fun Long.toDbDateString(): String {
-    return Instant.ofEpochMilli(this).atZone(ZoneId.of("UTC")).toLocalDate().format(dbFormatter)
 }
 
 private fun String.toDisplayDateFromDb(): String {
@@ -50,20 +48,20 @@ private fun String.toDisplayDateFromDb(): String {
 private fun validateDate(dateStr: String): Boolean {
     if (!dateStr.matches(dateRegex)) return false
     return try {
-        // For scheduled payments, future dates ARE allowed (and encouraged!)
         LocalDate.parse(dateStr, displayFormatter)
         true
     } catch (e: DateTimeParseException) {
         false
     }
 }
-// --- END DATE HELPERS ---
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecurringTransactionFormDialog(
     itemToEdit: ScheduledTransaction? = null,
     accounts: List<Account>,
+    loans: List<Loan>,
+    creditCards: List<CreditCard>,
     onDismiss: () -> Unit,
     onConfirm: (ScheduledTransaction) -> Unit
 ) {
@@ -71,52 +69,53 @@ fun RecurringTransactionFormDialog(
     var amount by remember { mutableStateOf(itemToEdit?.amount?.toString() ?: "") }
     var description by remember { mutableStateOf(itemToEdit?.description ?: "") }
     var category by remember { mutableStateOf(itemToEdit?.category ?: "") }
+    
+    // Funding Source
     var selectedAccountId by remember { mutableStateOf<Long?>(itemToEdit?.accountId) }
+    var selectedCreditCardId by remember { mutableStateOf<Long?>(itemToEdit?.creditCardId) }
+    
+    // Target (Loan/Credit Card being paid)
+    var selectedTargetId by remember { mutableStateOf<Long?>(itemToEdit?.loanId) }
+    
+    var paymentMode by remember { mutableStateOf(itemToEdit?.paymentMode ?: "") }
     var frequency by remember { mutableStateOf(itemToEdit?.frequency ?: "Monthly") }
 
-    // --- DATE STATE ---
-    // Default to today if adding new, or format existing DB date if editing
     var dateText by remember {
-        mutableStateOf(itemToEdit?.nextDueDate?.toDisplayDateFromDb() ?: getTodayDateMillis().toDisplayDateString())
+        mutableStateOf(itemToEdit?.nextDueDate?.toDisplayDateFromDb() ?: getNextMonthDateMillis().toDisplayDateString())
     }
     var isDateError by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     val categories = if (type == TransactionType.INCOME) DEFAULT_INCOME_CATEGORIES else DEFAULT_EXPENSE_CATEGORIES
-    // --- ADDED "Daily" ---
     val frequencies = listOf("Daily", "Weekly", "Monthly", "Yearly")
     val scrollState = rememberScrollState()
 
-    // --- DATE PICKER DIALOG ---
+    // Reset logic for category when type changes
+    LaunchedEffect(type) {
+        if (category.isNotEmpty() && category !in categories) {
+            category = ""
+        }
+    }
+
     if (showDatePicker) {
         val initialMillis = try {
             LocalDate.parse(dateText, displayFormatter).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         } catch (e: Exception) {
-            getTodayDateMillis()
+            getNextMonthDateMillis()
         }
 
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = initialMillis,
-            selectableDates = object : SelectableDates {
-                // Allow ALL dates (past, present, future) for scheduling
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                    return true
-                }
-            }
-        )
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val selectedMillis = datePickerState.selectedDateMillis ?: getTodayDateMillis()
+                        val selectedMillis = datePickerState.selectedDateMillis ?: initialMillis
                         dateText = selectedMillis.toDisplayDateString()
                         isDateError = false
                         showDatePicker = false
                     }
-                ) {
-                    Text("OK")
-                }
+                ) { Text("OK") }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
@@ -152,11 +151,10 @@ fun RecurringTransactionFormDialog(
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description (e.g. Netflix, Salary)") },
+                    label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // --- DATE FIELD ---
                 OutlinedTextField(
                     value = dateText,
                     onValueChange = {
@@ -166,7 +164,6 @@ fun RecurringTransactionFormDialog(
                     label = { Text("Next Due Date") },
                     placeholder = { Text("DD-MM-YYYY") },
                     isError = isDateError,
-                    supportingText = { if (isDateError) Text("Invalid date (DD-MM-YYYY)") },
                     trailingIcon = {
                         IconButton(onClick = { showDatePicker = true }) {
                             Icon(Icons.Default.DateRange, contentDescription = "Open Calendar")
@@ -178,7 +175,7 @@ fun RecurringTransactionFormDialog(
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it },
-                    label = { Text("Amount (0 for variable)") },
+                    label = { Text("Amount") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -186,8 +183,76 @@ fun RecurringTransactionFormDialog(
                 FormDropdown(
                     label = "Category",
                     options = categories,
-                    onOptionSelected = { category = categories[it] },
+                    onOptionSelected = { 
+                        category = categories[it]
+                        if (category == "Credit Card Payment" || category == "Loan Repayment") {
+                            selectedTargetId = null
+                        }
+                    },
                     selectedTextValue = category
+                )
+
+                // Funding Source selection (Request 4: Credit Cards as default method)
+                val fundingSources = accounts.map { "Account: ${it.name}" } + creditCards.map { "Card: ${it.name}" }
+                val selectedSourceText = when {
+                    selectedAccountId != null -> "Account: ${accounts.find { it.id == selectedAccountId }?.name ?: ""}"
+                    selectedCreditCardId != null -> "Card: ${creditCards.find { it.id == selectedCreditCardId }?.name ?: ""}"
+                    else -> ""
+                }
+                FormDropdown(
+                    label = "Pay From / To",
+                    options = fundingSources,
+                    onOptionSelected = { index ->
+                        if (index < accounts.size) {
+                            selectedAccountId = accounts[index].id
+                            selectedCreditCardId = null
+                            paymentMode = "" // Reset or set default
+                        } else {
+                            selectedAccountId = null
+                            selectedCreditCardId = creditCards[index - accounts.size].id
+                            paymentMode = "Credit Card"
+                        }
+                    },
+                    selectedTextValue = selectedSourceText
+                )
+
+                // If Credit Card Payment is selected, show card to pay and auto-set date (Request 3)
+                if (category == "Credit Card Payment" && type == TransactionType.EXPENSE) {
+                    FormDropdown(
+                        label = "Select Card to Pay",
+                        options = creditCards.map { it.name },
+                        onOptionSelected = { index ->
+                            val card = creditCards[index]
+                            selectedTargetId = card.id
+                            // Auto-set Next Due Date based on Card (Request 3)
+                            val today = LocalDate.now()
+                            var targetDate = today.withDayOfMonth(1).plusMonths(1)
+                            try {
+                                targetDate = targetDate.withDayOfMonth(card.dueDate)
+                            } catch (e: Exception) {
+                                // Request 6: Handle short months (e.g. 31st -> 1st of next month)
+                                targetDate = targetDate.plusMonths(1).withDayOfMonth(1)
+                            }
+                            dateText = targetDate.format(displayFormatter)
+                        },
+                        selectedTextValue = creditCards.find { it.id == selectedTargetId }?.name ?: ""
+                    )
+                }
+
+                if (category == "Loan Repayment" && type == TransactionType.EXPENSE) {
+                    FormDropdown(
+                        label = "Select Loan",
+                        options = loans.map { "${it.name} (${it.lender})" },
+                        onOptionSelected = { selectedTargetId = loans[it].id },
+                        selectedTextValue = loans.find { it.id == selectedTargetId }?.name ?: ""
+                    )
+                }
+
+                FormDropdown(
+                    label = "Payment Mode",
+                    options = DEFAULT_PAYMENT_MODES,
+                    onOptionSelected = { paymentMode = DEFAULT_PAYMENT_MODES[it] },
+                    selectedTextValue = paymentMode
                 )
 
                 FormDropdown(
@@ -197,22 +262,14 @@ fun RecurringTransactionFormDialog(
                     selectedTextValue = frequency
                 )
 
-                FormDropdown(
-                    label = "Default Account",
-                    options = accounts.map { it.name },
-                    onOptionSelected = { selectedAccountId = accounts[it].id },
-                    selectedTextValue = accounts.find { it.id == selectedAccountId }?.name ?: ""
-                )
-
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     Button(
                         onClick = {
-                            // Convert UI date (DD-MM-YYYY) to DB date (YYYY-MM-DD)
                             val dbDate = try {
                                 LocalDate.parse(dateText, displayFormatter).format(dbFormatter)
                             } catch (e: Exception) {
-                                getTodayDateMillis().toDbDateString()
+                                LocalDate.now().plusMonths(1).format(dbFormatter)
                             }
 
                             val newItem = ScheduledTransaction(
@@ -220,16 +277,18 @@ fun RecurringTransactionFormDialog(
                                 type = type,
                                 amount = amount.toDoubleOrNull() ?: 0.0,
                                 category = category,
-                                accountId = selectedAccountId ?: 0L,
-                                paymentMode = null,
+                                accountId = selectedAccountId,
+                                creditCardId = selectedCreditCardId,
+                                loanId = selectedTargetId,
+                                paymentMode = paymentMode,
                                 description = description,
                                 frequency = frequency,
-                                nextDueDate = dbDate // <-- Using the selected date
+                                nextDueDate = dbDate
                             )
                             onConfirm(newItem)
                             onDismiss()
                         },
-                        enabled = description.isNotBlank() && selectedAccountId != null && !isDateError
+                        enabled = description.isNotBlank() && (selectedAccountId != null || selectedCreditCardId != null) && !isDateError
                     ) { Text("Save") }
                 }
             }

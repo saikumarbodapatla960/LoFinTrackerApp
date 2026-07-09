@@ -2,10 +2,9 @@ package com.skai.lofintrackerapp
 
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity // <-- Changed to AppCompatActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -19,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
@@ -35,8 +33,8 @@ import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.UpdateAvailability
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import androidx.activity.enableEdgeToEdge
 
-// Extend AppCompatActivity for Biometric support
 class MainActivity : AppCompatActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -44,14 +42,12 @@ class MainActivity : AppCompatActivity() {
     ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // Updates
         val appUpdateManager = AppUpdateManagerFactory.create(this)
         appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
-            if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
-                && appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
-            ) {
+            if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE && appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) {
                 appUpdateManager.startUpdateFlowForResult(appUpdateInfo, AppUpdateType.IMMEDIATE, this, 1001)
             }
         }
@@ -61,41 +57,34 @@ class MainActivity : AppCompatActivity() {
         }
 
         val userPreferences = UserPreferences(this)
-
-        // Check Lock Status Synchronously
         var isAppLockEnabled = false
         runBlocking { isAppLockEnabled = userPreferences.isAppLockEnabled.first() }
 
         setContent {
             val app = application as LoFinApp
-            val viewModel: MainViewModel = viewModel(
-                factory = MainViewModelFactory(app.repository, userPreferences)
-            )
+            val viewModel: MainViewModel = viewModel(factory = MainViewModelFactory(app.repository, userPreferences))
             val navController = rememberNavController()
+            
+            // Collect all states here for consistency
             val userName by viewModel.userName.collectAsStateWithLifecycle()
             val hasSeenTutorial by viewModel.hasSeenTutorial.collectAsStateWithLifecycle()
             val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
 
-            // State to control locking
             var isUnlocked by remember { mutableStateOf(!isAppLockEnabled) }
 
             LoFinTrackerAppTheme(darkTheme = when(appTheme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-
                     if (isUnlocked) {
-                        // --- UNLOCKED: Show App Content ---
-                        if (userName == null) {
-                            Box(modifier = Modifier.fillMaxSize()) // Loading
-                        } else {
-                            val name = userName!!
-                            when {
-                                name.isBlank() -> WelcomeScreen { viewModel.saveUserName(it) }
-                                !hasSeenTutorial -> TutorialScreen(viewModel) { viewModel.saveHasSeenTutorial() }
-                                else -> AppNavigation(viewModel, navController)
+                        // Display content based on user state, but wait for userName to be non-null
+                        when {
+                            userName == null -> {
+                                Box(modifier = Modifier.fillMaxSize()) // Loading state
                             }
+                            userName.isBlank() -> WelcomeScreen { viewModel.saveUserName(it) }
+                            !hasSeenTutorial -> TutorialScreen(viewModel) { viewModel.saveHasSeenTutorial() }
+                            else -> AppNavigation(viewModel, navController)
                         }
                     } else {
-                        // --- LOCKED: Show Lock Screen & Trigger Biometric ---
                         Box(
                             modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
                             contentAlignment = Alignment.Center
@@ -103,13 +92,12 @@ class MainActivity : AppCompatActivity() {
                             Text("Locked", style = MaterialTheme.typography.headlineMedium)
                         }
 
-                        // Trigger Biometric only once when this UI is shown
                         LaunchedEffect(Unit) {
                             authenticateUser { success ->
                                 if (success) {
                                     isUnlocked = true
                                 } else {
-                                    finish() // Close app if failed/cancelled
+                                    finish()
                                 }
                             }
                         }
@@ -135,7 +123,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    // Don't close yet, let them try again
                 }
             })
 

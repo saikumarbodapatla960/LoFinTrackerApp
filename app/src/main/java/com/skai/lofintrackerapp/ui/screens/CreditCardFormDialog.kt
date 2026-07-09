@@ -1,4 +1,3 @@
-// In ...ui.screens/CreditCardFormDialog.kt
 package com.skai.lofintrackerapp.ui.screens
 
 import androidx.compose.foundation.layout.*
@@ -10,9 +9,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.skai.lofintrackerapp.data.db.CreditCard
-// We don't need FormDropdown here, this file is actually fine.
-// The errors were likely phantom errors from the AppDao bug.
-// But I will provide the full code just in case.
 
 @Composable
 fun CreditCardFormDialog(
@@ -24,6 +20,14 @@ fun CreditCardFormDialog(
     var limit by remember { mutableStateOf(cardToEdit?.limit?.toString() ?: "") }
     var statementDate by remember { mutableStateOf(cardToEdit?.statementDate?.toString() ?: "15") }
     var dueDate by remember { mutableStateOf(cardToEdit?.dueDate?.toString() ?: "28") }
+
+    var statementDateError by remember { mutableStateOf(false) }
+    var dueDateError by remember { mutableStateOf(false) }
+
+    fun validateDay(dayStr: String): Boolean {
+        val day = dayStr.toIntOrNull() ?: return false
+        return day in 1..31
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card {
@@ -39,7 +43,7 @@ fun CreditCardFormDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Card Name (e.g., Chase Sapphire)") },
+                    label = { Text("Card Name (e.g., HDFC Regalia)") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -54,15 +58,29 @@ fun CreditCardFormDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = statementDate,
-                        onValueChange = { statementDate = it },
+                        onValueChange = { 
+                            if (it.length <= 2) {
+                                statementDate = it
+                                statementDateError = it.isNotEmpty() && !validateDay(it)
+                            }
+                        },
                         label = { Text("Statement Day") },
+                        isError = statementDateError,
+                        supportingText = { if (statementDateError) Text("1-31 only") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = dueDate,
-                        onValueChange = { dueDate = it },
+                        onValueChange = { 
+                            if (it.length <= 2) {
+                                dueDate = it
+                                dueDateError = it.isNotEmpty() && !validateDay(it)
+                            }
+                        },
                         label = { Text("Due Day") },
+                        isError = dueDateError,
+                        supportingText = { if (dueDateError) Text("1-31 only") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f)
                     )
@@ -74,19 +92,20 @@ fun CreditCardFormDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
-                    }
-                    Button(onClick = {
-                        val finalCard = (cardToEdit ?: CreditCard()).copy(
-                            name = name,
-                            limit = limit.toDoubleOrNull() ?: 0.0,
-                            statementDate = statementDate.toIntOrNull() ?: 15,
-                            dueDate = dueDate.toIntOrNull() ?: 28
-                            // amountOwed is not set here
-                        )
-                        onConfirm(finalCard)
-                    }) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Button(
+                        onClick = {
+                            val finalCard = (cardToEdit ?: CreditCard()).copy(
+                                name = name,
+                                limit = limit.toDoubleOrNull() ?: 0.0,
+                                statementDate = statementDate.toIntOrNull() ?: 15,
+                                dueDate = dueDate.toIntOrNull() ?: 28
+                            )
+                            onConfirm(finalCard)
+                        },
+                        enabled = name.isNotBlank() && limit.toDoubleOrNull() != null && 
+                                  validateDay(statementDate) && validateDay(dueDate)
+                    ) {
                         Text(if (cardToEdit == null) "Save" else "Update")
                     }
                 }

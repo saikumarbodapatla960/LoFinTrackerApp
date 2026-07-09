@@ -19,14 +19,14 @@ import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 fun ChartsScreen(viewModel: MainViewModel) {
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
     val endDate by viewModel.endDate.collectAsStateWithLifecycle()
-    val totalFilteredIncome by viewModel.totalFilteredIncome.collectAsStateWithLifecycle()
-    val totalFilteredExpense by viewModel.totalFilteredExpense.collectAsStateWithLifecycle()
-    val transactions by viewModel.filteredTransactions.collectAsStateWithLifecycle()
+    val totalFilteredIncome by viewModel.totalFilteredIncome.collectAsStateWithLifecycle(initialValue = 0.0)
+    val totalFilteredExpense by viewModel.totalFilteredExpense.collectAsStateWithLifecycle(initialValue = 0.0)
+    val transactions by viewModel.filteredTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
 
-    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val loans by viewModel.allLoans.collectAsStateWithLifecycle()
-    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
-    val currency by viewModel.currency.collectAsStateWithLifecycle() // <-- ADDED
+    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loans by viewModel.allLoans.collectAsStateWithLifecycle(initialValue = emptyList())
+    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle(initialValue = emptyList())
+    val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
 
     var showTransactionDialog by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
@@ -51,13 +51,23 @@ fun ChartsScreen(viewModel: MainViewModel) {
         TransactionList(
             transactions = transactions,
             accounts = accounts,
-            currencyCode = currency, // <-- FIX: Passing Currency
+            creditCards = creditCards,
+            currencyCode = currency,
             onEdit = { transactionToEdit = it; showTransactionDialog = true }
         )
         Spacer(modifier = Modifier.height(16.dp))
     }
 
     if (showTransactionDialog) {
-        TransactionFormDialog(transactionToEdit, accounts, loans, creditCards, { showTransactionDialog = false; transactionToEdit = null }, { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, { viewModel.deleteTransaction(it) })
+        TransactionFormDialog(
+            transactionToEdit = transactionToEdit, 
+            accounts = accounts, 
+            loans = loans, 
+            creditCards = creditCards, 
+            onDismiss = { showTransactionDialog = false; transactionToEdit = null }, 
+            onConfirm = { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, 
+            onDelete = { viewModel.deleteTransaction(it) },
+            onAddScheduled = { viewModel.insertScheduledTransaction(it) }
+        )
     }
 }

@@ -42,7 +42,7 @@ val drawerItems = listOf(
 @Composable
 fun AppShell(
     title: String,
-    userName: String? = null, // Added userName parameter
+    userName: String? = null,
     viewModel: MainViewModel,
     navController: NavController,
     drawerState: DrawerState,
@@ -82,10 +82,8 @@ fun AppShell(
             topBar = {
                 TopAppBar(
                     title = {
-                        // --- RESTORED: Column for Title + Subtitle ---
                         Column {
                             Text(text = title, style = MaterialTheme.typography.titleLarge)
-                            // Only show Welcome message on Dashboard
                             if (currentRoute == Screen.Dashboard.route && !userName.isNullOrEmpty()) {
                                 Text(
                                     text = "Welcome, $userName !",
@@ -120,7 +118,8 @@ fun AppShell(
                 loans = loans,
                 creditCards = creditCards,
                 onDismiss = { showTransactionDialog = false },
-                onConfirm = { viewModel.insertTransaction(it) }
+                onConfirm = { viewModel.insertTransaction(it) },
+                onAddScheduled = { viewModel.insertScheduledTransaction(it) } // <-- ADDED
             )
         }
     }

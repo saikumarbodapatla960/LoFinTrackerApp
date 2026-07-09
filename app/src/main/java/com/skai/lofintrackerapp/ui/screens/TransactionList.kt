@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.skai.lofintrackerapp.data.db.Account
+import com.skai.lofintrackerapp.data.db.CreditCard
 import com.skai.lofintrackerapp.data.db.Transaction
 import com.skai.lofintrackerapp.data.db.TransactionType
 import com.skai.lofintrackerapp.ui.common.formatDateForDisplay
@@ -24,17 +25,28 @@ import com.skai.lofintrackerapp.ui.common.formatCurrency
 fun TransactionList(
     transactions: List<Transaction>,
     accounts: List<Account>,
-    currencyCode: String, // <-- Added
+    creditCards: List<CreditCard>,
+    currencyCode: String,
     onEdit: (Transaction) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accountMap = remember(accounts) { accounts.associateBy({ it.id }, { it.name }) }
+    val accountMap = remember(accounts) {
+        accounts.associateBy({ acc: Account -> acc.id }, { acc: Account -> acc.name })
+    }
+    val cardMap = remember(creditCards) {
+        creditCards.associateBy({ card: CreditCard -> card.id }, { card: CreditCard -> card.name })
+    }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         transactions.forEach { transaction ->
+            val sourceName = when {
+                transaction.creditCardId != null -> cardMap[transaction.creditCardId] ?: "Unknown Card"
+                transaction.accountId != null -> accountMap[transaction.accountId] ?: "Unknown Account"
+                else -> "Unknown"
+            }
             TransactionRow(
                 transaction = transaction,
-                accountName = accountMap[transaction.accountId] ?: "Unknown",
+                sourceName = sourceName,
                 currencyCode = currencyCode,
                 onEdit = { onEdit(transaction) }
             )
@@ -43,7 +55,7 @@ fun TransactionList(
 }
 
 @Composable
-private fun TransactionRow(transaction: Transaction, accountName: String, currencyCode: String, onEdit: () -> Unit) {
+private fun TransactionRow(transaction: Transaction, sourceName: String, currencyCode: String, onEdit: () -> Unit) {
     val isIncome = transaction.type == TransactionType.INCOME
     val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
     val sign = if (isIncome) "+" else "-"
@@ -55,7 +67,7 @@ private fun TransactionRow(transaction: Transaction, accountName: String, curren
             Icon(imageVector = icon, contentDescription = null, tint = amountColor, modifier = Modifier.padding(end = 12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = transaction.category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(text = "$accountName | ${formatDateForDisplay(transaction.date)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = "$sourceName | ${formatDateForDisplay(transaction.date)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (transaction.description.isNotBlank()) Text(text = transaction.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(text = "$sign$formattedAmount", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = amountColor, modifier = Modifier.padding(end = 8.dp))

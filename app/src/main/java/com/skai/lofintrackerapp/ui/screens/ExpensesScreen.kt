@@ -3,15 +3,17 @@ package com.skai.lofintrackerapp.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.skai.lofintrackerapp.data.DEFAULT_EXPENSE_CATEGORIES // FIX: Added Import
+import com.skai.lofintrackerapp.data.DEFAULT_EXPENSE_CATEGORIES
 import com.skai.lofintrackerapp.data.db.Transaction
 import com.skai.lofintrackerapp.ui.common.ReusablePieChart
 import com.skai.lofintrackerapp.ui.common.ReusableTotalCard
@@ -19,16 +21,17 @@ import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
 
 @Composable
 fun ExpensesScreen(viewModel: MainViewModel) {
-    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle()
-    val expenseTransactions by viewModel.filteredExpenseTransactions.collectAsStateWithLifecycle()
+    val accounts by viewModel.allAccounts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val expenseTransactions by viewModel.filteredExpenseTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
     val endDate by viewModel.endDate.collectAsStateWithLifecycle()
-    val selectedCategories by viewModel.selectedExpenseCategories.collectAsStateWithLifecycle()
-    val currency by viewModel.currency.collectAsStateWithLifecycle()
-    val allCategories = DEFAULT_EXPENSE_CATEGORIES // FIX: Variable Defined
+    val selectedCategories by viewModel.selectedExpenseCategories.collectAsStateWithLifecycle(initialValue = emptySet())
+    val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
+    val isSortDesc by viewModel.sortDescending.collectAsStateWithLifecycle(initialValue = true)
+    val allCategories = DEFAULT_EXPENSE_CATEGORIES
 
-    val loans by viewModel.allLoans.collectAsStateWithLifecycle()
-    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle()
+    val loans by viewModel.allLoans.collectAsStateWithLifecycle(initialValue = emptyList())
+    val creditCards by viewModel.allCreditCards.collectAsStateWithLifecycle(initialValue = emptyList())
 
     var showTransactionDialog by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
@@ -41,7 +44,6 @@ fun ExpensesScreen(viewModel: MainViewModel) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ReusableTotalCard("Total Expense", totalExpense, currency, Color(0xFFFDECEA), Color(0xFFB71C1C))
 
-        // FIX: Using Named Arguments
         FilterControls(
             startDate = startDate,
             endDate = endDate,
@@ -61,12 +63,47 @@ fun ExpensesScreen(viewModel: MainViewModel) {
             }
         }
 
-        Text(text = "Expense Transactions", style = MaterialTheme.typography.titleLarge)
-        TransactionList(expenseTransactions, accounts, currency, { transactionToEdit = it; showTransactionDialog = true })
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Expense Transactions", style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                Icon(
+                    imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    contentDescription = "Toggle Sort Order",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        
+        TransactionList(
+            transactions = expenseTransactions,
+            accounts = accounts,
+            creditCards = creditCards,
+            currencyCode = currency,
+            onEdit = { transaction ->
+                transactionToEdit = transaction
+                showTransactionDialog = true
+            }
+        )
         Spacer(modifier = Modifier.height(16.dp))
     }
 
     if (showTransactionDialog) {
-        TransactionFormDialog(transactionToEdit, accounts, loans, creditCards, { showTransactionDialog = false; transactionToEdit = null }, { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) }, { viewModel.deleteTransaction(it) })
+        TransactionFormDialog(
+            transactionToEdit = transactionToEdit,
+            accounts = accounts,
+            loans = loans,
+            creditCards = creditCards,
+            onDismiss = { 
+                showTransactionDialog = false
+                transactionToEdit = null 
+            },
+            onConfirm = { if (transactionToEdit == null) viewModel.insertTransaction(it) else viewModel.updateTransaction(transactionToEdit!!, it) },
+            onDelete = { viewModel.deleteTransaction(it) },
+            onAddScheduled = { viewModel.insertScheduledTransaction(it) }
+        )
     }
 }

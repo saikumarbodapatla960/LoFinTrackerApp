@@ -1,4 +1,3 @@
-// In .../PaymentReminderWorker.kt
 package com.skai.lofintrackerapp
 
 import android.app.NotificationChannel
@@ -10,11 +9,12 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.skai.lofintrackerapp.data.UserPreferences
 import com.skai.lofintrackerapp.data.db.AppDatabase
 import com.skai.lofintrackerapp.data.db.ScheduledTransaction
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 class PaymentReminderWorker(
     context: Context,
@@ -24,25 +24,26 @@ class PaymentReminderWorker(
     override suspend fun doWork(): Result {
         val database = AppDatabase.getDatabase(applicationContext)
         val dao = database.appDao()
+        val userPreferences = UserPreferences(applicationContext)
 
         val scheduledItems = dao.getAllScheduledTransactions().first()
+        val reminderDays = userPreferences.reminderDays.first()
         val today = LocalDate.now()
 
-        // --- NEW LOGIC: CHECK FOR PAST AND PRESENT ---
-        val dueItems = scheduledItems.filter {
+        val itemsToNotify = scheduledItems.filter {
             try {
-                val dueDate = LocalDate.parse(it.nextDueDate) // Assumes YYYY-MM-DD
-                // If date is today OR in the past (overdue), notify!
-                !dueDate.isAfter(today)
+                val dueDate = LocalDate.parse(it.nextDueDate)
+                val daysUntilDue = ChronoUnit.DAYS.between(today, dueDate)
+                // Notify if it's due today, overdue, or due within the user's setting
+                daysUntilDue <= reminderDays
             } catch (e: Exception) {
                 false
             }
         }
 
-        // --- NEW LOGIC: SEPARATE NOTIFICATIONS ---
-        if (dueItems.isNotEmpty()) {
-            createNotificationChannel() // Ensure channel exists
-            dueItems.forEach { item ->
+        if (itemsToNotify.isNotEmpty()) {
+            createNotificationChannel()
+            itemsToNotify.forEach { item ->
                 sendNotification(item)
             }
         }
@@ -66,7 +67,6 @@ class PaymentReminderWorker(
     private fun sendNotification(item: ScheduledTransaction) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Intent to open the specific screen
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("navigate_to", "recurring")
@@ -74,27 +74,39 @@ class PaymentReminderWorker(
 
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
-            item.id.toInt(), // Unique Request Code
+            item.id.toInt(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Customize message based on if it's overdue or due today
         val dueDate = LocalDate.parse(item.nextDueDate)
         val today = LocalDate.now()
-        val title = if (dueDate.isBefore(today)) "Overdue Payment!" else "Payment Due Today"
+        
+        val title = when {
+            dueDate.isBefore(today) -> "Overdue Payment!"
+            dueDate.isEqual(today) -> "Payment Due Today"
+            else -> "Upcoming Payment"
+        }
+        
+        val daysText = if (dueDate.isAfter(today)) {
+            "Due in ${ChronoUnit.DAYS.between(today, dueDate)} days"
+        } else if (dueDate.isBefore(today)) {
+            "Was due on ${item.nextDueDate}"
+        } else {
+            "Due today!"
+        }
+
         val amountText = if (item.amount > 0) "Amount: ₹${item.amount}" else "Variable Amount"
 
         val notification = NotificationCompat.Builder(applicationContext, "scheduled_payments_channel")
-            .setSmallIcon(R.drawable.app_logo)
+            .setSmallIcon(R.drawable.app_logo) // Ensure this icon exists
             .setContentTitle(title)
-            .setContentText("${item.description} - $amountText")
+            .setContentText("${item.description} - $daysText ($amountText)")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()
 
-        // Use the Item ID as the Notification ID so they don't overwrite each other
         notificationManager.notify(item.id.toInt(), notification)
     }
 }

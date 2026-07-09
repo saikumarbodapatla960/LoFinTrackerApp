@@ -1,8 +1,9 @@
-// In ...ui.screens/LoanFormDialog.kt
 package com.skai.lofintrackerapp.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -11,10 +12,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.skai.lofintrackerapp.data.db.Account
 import com.skai.lofintrackerapp.data.db.Loan
-import com.skai.lofintrackerapp.ui.common.FormDropdown // <-- ADDED THIS IMPORT
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.skai.lofintrackerapp.ui.common.FormDropdown
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+private val dbFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+private val displayFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +34,37 @@ fun LoanFormDialog(
     var lender by remember { mutableStateOf(loanToEdit?.lender ?: "") }
     var initialAmount by remember { mutableStateOf(loanToEdit?.initialAmount?.toString() ?: "") }
     var selectedAccountId by remember { mutableStateOf<Long?>(null) }
+    
+    // Date State
+    var dateText by remember { 
+        mutableStateOf(loanToEdit?.date?.let { 
+            LocalDate.parse(it, dbFormatter).format(displayFormatter) 
+        } ?: LocalDate.now().format(displayFormatter)) 
+    }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = LocalDate.parse(dateText, displayFormatter)
+                .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let {
+                        dateText = Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(displayFormatter)
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card {
@@ -55,6 +92,19 @@ fun LoanFormDialog(
                 )
 
                 OutlinedTextField(
+                    value = dateText,
+                    onValueChange = { },
+                    label = { Text("Date") },
+                    readOnly = true,
+                    trailingIcon = {
+                        IconButton(onClick = { showDatePicker = true }) {
+                            Icon(Icons.Default.DateRange, contentDescription = "Select Date")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
                     value = initialAmount,
                     onValueChange = { initialAmount = it },
                     label = { Text("Initial Amount") },
@@ -64,7 +114,6 @@ fun LoanFormDialog(
                 )
 
                 if (loanToEdit == null) {
-                    // This line will now work
                     FormDropdown(
                         label = "Deposit to Account",
                         options = accounts.map { it.name },
@@ -85,22 +134,23 @@ fun LoanFormDialog(
                         Text("Cancel")
                     }
 
-                    val isSaveEnabled = loanToEdit != null || (selectedAccountId != null && initialAmount.isNotBlank() && name.isNotBlank() && lender.isNotBlank())
+                    val isSaveEnabled = name.isNotBlank() && lender.isNotBlank() && 
+                            (loanToEdit != null || (selectedAccountId != null && initialAmount.toDoubleOrNull() != null))
 
                     Button(
                         onClick = {
                             val amount = initialAmount.toDoubleOrNull() ?: 0.0
+                            val dbDate = LocalDate.parse(dateText, displayFormatter).format(dbFormatter)
 
                             val finalLoan = if (loanToEdit != null) {
-                                loanToEdit.copy(name = name, lender = lender)
+                                loanToEdit.copy(name = name, lender = lender, date = dbDate)
                             } else {
-                                val currentDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                                 Loan(
                                     name = name,
                                     lender = lender,
                                     initialAmount = amount,
                                     remainingAmount = amount,
-                                    date = currentDate
+                                    date = dbDate
                                 )
                             }
                             onConfirm(finalLoan, selectedAccountId)

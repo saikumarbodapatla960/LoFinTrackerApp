@@ -56,6 +56,11 @@ interface AppDao {
     suspend fun deleteTransaction(transaction: Transaction)
     @Query("SELECT * FROM transactions ORDER BY date DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
+    
+    // Direct non-flow query to prevent deadlocks inside Room Transactions
+    @Query("SELECT * FROM transactions")
+    suspend fun getTransactionsDirect(): List<Transaction>
+    
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransactionById(id: Long): Transaction?
 
