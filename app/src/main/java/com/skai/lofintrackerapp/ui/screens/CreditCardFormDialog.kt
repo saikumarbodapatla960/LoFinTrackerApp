@@ -51,8 +51,14 @@ fun CreditCardFormDialog(
                     value = limit,
                     onValueChange = { limit = it },
                     label = { Text("Credit Limit") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = limit.isNotBlank() && ((limit.toDoubleOrNull() ?: -1.0) < 0.0),
+                    supportingText = {
+                        if (limit.isNotBlank() && ((limit.toDoubleOrNull() ?: -1.0) < 0.0)) {
+                            Text("Credit limit cannot be negative.")
+                        }
+                    }
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -103,7 +109,7 @@ fun CreditCardFormDialog(
                             )
                             onConfirm(finalCard)
                         },
-                        enabled = name.isNotBlank() && limit.toDoubleOrNull() != null && 
+                        enabled = name.isNotBlank() && (limit.toDoubleOrNull()?.let { it >= 0.0 } == true) &&
                                   validateDay(statementDate) && validateDay(dueDate)
                     ) {
                         Text(if (cardToEdit == null) "Save" else "Update")

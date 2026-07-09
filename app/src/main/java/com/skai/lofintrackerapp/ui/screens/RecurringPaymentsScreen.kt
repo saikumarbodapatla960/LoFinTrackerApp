@@ -49,7 +49,7 @@ fun RecurringPaymentsScreen(viewModel: MainViewModel) {
         contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
     ) { padding ->
         Column(modifier = Modifier.padding(padding).padding(horizontal = 16.dp).fillMaxSize()) {
-            // Removed top Spacer for cleaner look
+            Spacer(modifier = Modifier.height(16.dp))
             Text("Scheduled Payments", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(16.dp))
 

@@ -59,7 +59,7 @@ fun LoansScreen(viewModel: MainViewModel) {
         contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
-            // Spacer removed to fix the gap
+            Spacer(modifier = Modifier.height(16.dp))
             ReusableTotalCard("Total Outstanding Loans", totalLoans, currency, Color(0xFFFFF8E1), Color(0xFFFF9800))
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -106,8 +106,8 @@ fun LoansScreen(viewModel: MainViewModel) {
                 Text("Recent Loan Transactions", style = MaterialTheme.typography.titleLarge)
                 IconButton(onClick = { viewModel.toggleSortOrder() }) {
                     Icon(
-                        imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                        contentDescription = "Toggle Sort Order",
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = if (isSortDesc) "Newest added first" else "Oldest added first",
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }

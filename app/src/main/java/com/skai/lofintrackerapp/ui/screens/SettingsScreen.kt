@@ -2,12 +2,17 @@ package com.skai.lofintrackerapp.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import android.app.Activity
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skai.lofintrackerapp.data.db.Transaction
@@ -46,6 +52,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     var showNameDialog by remember { mutableStateOf(false) }
     var showReminderDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    var settingsMessage by remember { mutableStateOf<String?>(null) }
     
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -53,7 +60,8 @@ fun SettingsScreen(viewModel: MainViewModel) {
         uri?.let {
             val content = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() }
             if (content != null) {
-                viewModel.restoreFromJson(content)
+            viewModel.restoreFromJson(content)
+                settingsMessage = "Backup restored."
             }
         }
     }
@@ -66,6 +74,10 @@ fun SettingsScreen(viewModel: MainViewModel) {
     ) {
         // --- PROFILE ---
         Text("Profile", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        settingsMessage?.let {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        }
         Spacer(modifier = Modifier.height(8.dp))
 
         SettingsItem(
@@ -80,6 +92,13 @@ fun SettingsScreen(viewModel: MainViewModel) {
             title = "Payment Reminders",
             subtitle = if (reminderDays == 0) "Notifying on the due day" else "Notifying $reminderDays days before",
             onClick = { showReminderDialog = true }
+        )
+
+        SettingsItem(
+            icon = Icons.Default.Info,
+            title = "App Version",
+            subtitle = "2.6-fix - July 9, 2026",
+            onClick = { settingsMessage = "You are running the fixed build." }
         )
 
         // --- BACKUP & TRANSFER ---
@@ -154,7 +173,20 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     Text("Require fingerprint or PIN", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Switch(checked = isAppLockEnabled, onCheckedChange = { viewModel.saveAppLockEnabled(it) })
+            Switch(
+                checked = isAppLockEnabled,
+                onCheckedChange = { requested ->
+                    authenticateForSettingChange(
+                        context = context,
+                        enable = requested,
+                        onSuccess = {
+                            viewModel.saveAppLockEnabled(requested)
+                            settingsMessage = if (requested) "App Lock enabled." else "App Lock disabled."
+                        },
+                        onError = { settingsMessage = it }
+                    )
+                }
+            )
         }
     }
 
@@ -236,6 +268,53 @@ fun SettingsScreen(viewModel: MainViewModel) {
     }
 }
 
+private fun authenticateForSettingChange(
+    context: Context,
+    enable: Boolean,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val activity = context as? AppCompatActivity
+    if (activity == null) {
+        onError("Biometric prompt is unavailable.")
+        return
+    }
+
+    val canAuthenticate = BiometricManager.from(context).canAuthenticate(
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    )
+    if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+        onError("Set up fingerprint, face unlock, or device PIN first.")
+        return
+    }
+
+    val prompt = BiometricPrompt(
+        activity,
+        ContextCompat.getMainExecutor(context),
+        object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                onSuccess()
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                onError(errString.toString())
+            }
+
+            override fun onAuthenticationFailed() {
+                onError("Authentication failed. Try again.")
+            }
+        }
+    )
+
+    val promptInfo = BiometricPrompt.PromptInfo.Builder()
+        .setTitle(if (enable) "Enable App Lock" else "Disable App Lock")
+        .setSubtitle("Confirm this security change")
+        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+        .build()
+
+    prompt.authenticate(promptInfo)
+}
+
 @Composable
 fun SettingsItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
@@ -260,7 +339,10 @@ fun exportBackup(context: Context, json: String) {
         val file = File(context.cacheDir, filename)
         file.writeText(json)
         shareFile(context, file, "application/json", "System Backup")
-    } catch (e: Exception) { e.printStackTrace() }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+    }
 }
 
 fun exportFinancialCSV(context: Context, transactions: List<Transaction>) {
@@ -273,7 +355,10 @@ fun exportFinancialCSV(context: Context, transactions: List<Transaction>) {
         val file = File(context.cacheDir, "lofin_excel_report_${System.currentTimeMillis()}.csv")
         file.writeText(sb.toString())
         shareFile(context, file, "text/csv", "Financial Excel Report")
-    } catch (e: Exception) { e.printStackTrace() }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "CSV export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+    }
 }
 
 fun generateFinancialPdf(context: Context, name: String, balance: Double, debt: Double, currency: String, txs: List<Transaction>) {
@@ -309,7 +394,10 @@ fun generateFinancialPdf(context: Context, name: String, balance: Double, debt: 
         document.writeTo(FileOutputStream(file))
         document.close()
         shareFile(context, file, "application/pdf", "Financial PDF Statement")
-    } catch (e: Exception) { e.printStackTrace() }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "PDF export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+    }
 }
 
 private fun shareFile(context: Context, file: File, mimeType: String, title: String) {
@@ -319,5 +407,9 @@ private fun shareFile(context: Context, file: File, mimeType: String, title: Str
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(intent, title))
+    val chooser = Intent.createChooser(intent, title)
+    if (context !is Activity) {
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(chooser)
 }

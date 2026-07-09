@@ -75,12 +75,11 @@ class MainActivity : AppCompatActivity() {
             LoFinTrackerAppTheme(darkTheme = when(appTheme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     if (isUnlocked) {
-                        // Display content based on user state, but wait for userName to be non-null
                         when {
-                            userName == null -> {
-                                Box(modifier = Modifier.fillMaxSize()) // Loading state
+                            userName.isBlank() && !hasSeenTutorial -> WelcomeScreen {
+                                viewModel.saveUserName(it)
+                                viewModel.saveHasSeenTutorial()
                             }
-                            userName.isBlank() -> WelcomeScreen { viewModel.saveUserName(it) }
                             !hasSeenTutorial -> TutorialScreen(viewModel) { viewModel.saveHasSeenTutorial() }
                             else -> AppNavigation(viewModel, navController)
                         }
@@ -108,6 +107,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun authenticateUser(onResult: (Boolean) -> Unit) {
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val canAuthenticate = BiometricManager.from(this).canAuthenticate(authenticators)
+        if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+            onResult(true)
+            return
+        }
+
         val executor = ContextCompat.getMainExecutor(this)
         val biometricPrompt = BiometricPrompt(this, executor,
             object : BiometricPrompt.AuthenticationCallback() {
@@ -129,7 +135,7 @@ class MainActivity : AppCompatActivity() {
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle("LoFin Tracker Locked")
             .setSubtitle("Use fingerprint or PIN")
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .setAllowedAuthenticators(authenticators)
             .build()
 
         biometricPrompt.authenticate(promptInfo)

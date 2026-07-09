@@ -23,6 +23,8 @@ fun AccountFormDialog(
     var initialBalance by remember { mutableStateOf(accountToEdit?.initialBalance?.toString() ?: "") }
     var selectedType by remember { mutableStateOf(accountToEdit?.type ?: AccountType.SAVINGS) }
     var isDropdownExpanded by remember { mutableStateOf(false) }
+    val initialBalanceValue = initialBalance.toDoubleOrNull()
+    val isBalanceInvalid = accountToEdit == null && (initialBalanceValue == null || initialBalanceValue < 0.0)
 
     Dialog(onDismissRequest = onDismiss) {
         Card {
@@ -46,9 +48,11 @@ fun AccountFormDialog(
                     value = initialBalance,
                     onValueChange = { initialBalance = it },
                     label = { Text("Initial Balance") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = accountToEdit == null
+                    enabled = accountToEdit == null,
+                    isError = isBalanceInvalid,
+                    supportingText = { if (isBalanceInvalid) Text("Balance cannot be negative.") }
                 )
 
                 // --- FIXED DROPDOWN LOGIC ---
@@ -102,8 +106,10 @@ fun AccountFormDialog(
                     TextButton(onClick = onDismiss) {
                         Text("Cancel")
                     }
-                    Button(onClick = {
-                        val balance = initialBalance.toDoubleOrNull() ?: 0.0
+                    Button(
+                        enabled = name.isNotBlank() && (accountToEdit != null || !isBalanceInvalid),
+                        onClick = {
+                        val balance = initialBalanceValue ?: 0.0
 
                         val finalAccount = if (accountToEdit != null) {
                             accountToEdit.copy(name = name)

@@ -37,7 +37,10 @@ class MainViewModel(
     fun saveAppTheme(theme: String) = viewModelScope.launch { userPreferences.saveAppTheme(theme) }
     fun saveHasSeenTutorial() = viewModelScope.launch { userPreferences.saveHasSeenTutorial(true) }
     fun saveCurrency(curr: String) = viewModelScope.launch { userPreferences.saveCurrency(curr) }
-    fun saveReminderDays(days: Int) = viewModelScope.launch { userPreferences.saveReminderDays(days) }
+    fun saveReminderDays(days: Int) = viewModelScope.launch {
+        userPreferences.saveReminderDays(days)
+        repository.enqueueImmediateReminderCheck()
+    }
 
     // --- Data Lists ---
     val allAccounts: StateFlow<List<Account>> = repository.allAccounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -76,32 +79,31 @@ class MainViewModel(
     // --- Filtered Logic ---
     val filteredIncomeTransactions = combine(allTransactions, startDate, endDate, selectedIncomeCategories, sortDescending) { txs, start, end, cats, isDesc ->
         val filtered = txs.filter { LocalDate.parse(it.date).let { d -> !d.isBefore(start) && !d.isAfter(end) } && it.type == TransactionType.INCOME && (cats.isEmpty() || cats.contains(it.category)) }
-        if (isDesc) filtered.sortedByDescending { it.date } else filtered.sortedBy { it.date }
+        sortByAddedTime(filtered, isDesc)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val filteredExpenseTransactions = combine(allTransactions, startDate, endDate, selectedExpenseCategories, sortDescending) { txs, start, end, cats, isDesc ->
         val filtered = txs.filter { LocalDate.parse(it.date).let { d -> !d.isBefore(start) && !d.isAfter(end) } && it.type == TransactionType.EXPENSE && (cats.isEmpty() || cats.contains(it.category)) }
-        if (isDesc) filtered.sortedByDescending { it.date } else filtered.sortedBy { it.date }
+        sortByAddedTime(filtered, isDesc)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val filteredBalanceTransactions = combine(allTransactions, startDate, endDate, selectedAccountIds, sortDescending) { txs, start, end, ids, isDesc ->
         val filtered = txs.filter { LocalDate.parse(it.date).let { d -> !d.isBefore(start) && !d.isAfter(end) } && (ids.isEmpty() || ids.contains(it.accountId)) }
-        if (isDesc) filtered.sortedByDescending { it.date } else filtered.sortedBy { it.date }
+        sortByAddedTime(filtered, isDesc)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val filteredLoanTransactions = combine(allTransactions, startDate, endDate, selectedLoanIds, sortDescending) { txs, start, end, ids, isDesc ->
         val filtered = txs.filter { LocalDate.parse(it.date).let { d -> !d.isBefore(start) && !d.isAfter(end) } && it.loanId != null && (ids.isEmpty() || ids.contains(it.loanId)) }
-        if (isDesc) filtered.sortedByDescending { it.date } else filtered.sortedBy { it.date }
+        sortByAddedTime(filtered, isDesc)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val filteredCreditCardTransactions = combine(allTransactions, startDate, endDate, selectedCreditCardIds, sortDescending) { txs, start, end, ids, isDesc ->
         val filtered = txs.filter {
             val d = LocalDate.parse(it.date)
             !d.isBefore(start) && !d.isAfter(end) &&
-                    ((it.creditCardId != null && (ids.isEmpty() || ids.contains(it.creditCardId))) ||
-                            (it.category == "Credit Card Payment" && (ids.isEmpty() || ids.contains(it.loanId))))
+                    (it.creditCardId != null && (ids.isEmpty() || ids.contains(it.creditCardId)))
         }
-        if (isDesc) filtered.sortedByDescending { it.date } else filtered.sortedBy { it.date }
+        sortByAddedTime(filtered, isDesc)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalFilteredIncome = filteredIncomeTransactions.map { it.sumOf { tx -> tx.amount } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
@@ -109,7 +111,7 @@ class MainViewModel(
     
     val filteredTransactions = combine(allTransactions, startDate, endDate, sortDescending) { txs, start, end, isDesc ->
         val filtered = txs.filter { LocalDate.parse(it.date).let { d -> !d.isBefore(start) && !d.isAfter(end) } }
-        if (isDesc) filtered.sortedByDescending { it.date } else filtered.sortedBy { it.date }
+        sortByAddedTime(filtered, isDesc)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- Helper Functions ---
@@ -121,6 +123,14 @@ class MainViewModel(
     fun toggleCreditCardId(id: Long) { _selectedCreditCardIds.value = _selectedCreditCardIds.value.toMutableSet().apply { if(contains(id)) remove(id) else add(id) } }
     fun toggleIncomeCategory(c: String) { _selectedIncomeCategories.value = _selectedIncomeCategories.value.toMutableSet().apply { if(contains(c)) remove(c) else add(c) } }
     fun toggleExpenseCategory(c: String) { _selectedExpenseCategories.value = _selectedExpenseCategories.value.toMutableSet().apply { if(contains(c)) remove(c) else add(c) } }
+
+    private fun sortByAddedTime(transactions: List<Transaction>, descending: Boolean): List<Transaction> {
+        return if (descending) {
+            transactions.sortedWith(compareByDescending<Transaction> { it.createdAt }.thenByDescending { it.id })
+        } else {
+            transactions.sortedWith(compareBy<Transaction> { it.createdAt }.thenBy { it.id })
+        }
+    }
 
     // --- DB Operations ---
     fun insertAccount(a: Account) = viewModelScope.launch { repository.insertAccount(a) }

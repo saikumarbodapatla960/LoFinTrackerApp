@@ -54,7 +54,7 @@ fun BalanceScreen(viewModel: MainViewModel) {
         contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
-            // Spacer removed from the top
+            Spacer(modifier = Modifier.height(16.dp))
             ReusableTotalCard("Total Balance", totalBalance, currency, Color(0xFFE3F2FD), Color(0xFF2196F3))
             Spacer(modifier = Modifier.height(16.dp))
             Text("Your Accounts", style = MaterialTheme.typography.titleLarge)
@@ -89,8 +89,8 @@ fun BalanceScreen(viewModel: MainViewModel) {
                 Text("Recent Transactions", style = MaterialTheme.typography.titleLarge)
                 IconButton(onClick = { viewModel.toggleSortOrder() }) {
                     Icon(
-                        imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                        contentDescription = "Toggle Sort Order",
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = if (isSortDesc) "Newest added first" else "Oldest added first",
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }

@@ -2,6 +2,7 @@ package com.skai.lofintrackerapp.data.db
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
@@ -56,6 +57,11 @@ data class CreditCard(
         ForeignKey(entity = Account::class, parentColumns = ["id"], childColumns = ["accountId"], onDelete = ForeignKey.SET_NULL),
         ForeignKey(entity = CreditCard::class, parentColumns = ["id"], childColumns = ["creditCardId"], onDelete = ForeignKey.SET_NULL),
         ForeignKey(entity = Loan::class, parentColumns = ["id"], childColumns = ["loanId"], onDelete = ForeignKey.SET_NULL)
+    ],
+    indices = [
+        Index(value = ["accountId"], name = "index_scheduled_transactions_accountId"),
+        Index(value = ["creditCardId"], name = "index_scheduled_transactions_creditCardId"),
+        Index(value = ["loanId"], name = "index_scheduled_transactions_loanId")
     ]
 )
 @Serializable
@@ -80,6 +86,11 @@ data class ScheduledTransaction(
         ForeignKey(entity = Account::class, parentColumns = ["id"], childColumns = ["accountId"], onDelete = ForeignKey.RESTRICT),
         ForeignKey(entity = Loan::class, parentColumns = ["id"], childColumns = ["loanId"], onDelete = ForeignKey.SET_NULL),
         ForeignKey(entity = CreditCard::class, parentColumns = ["id"], childColumns = ["creditCardId"], onDelete = ForeignKey.RESTRICT)
+    ],
+    indices = [
+        Index(value = ["accountId"], name = "index_transactions_accountId"),
+        Index(value = ["loanId"], name = "index_transactions_loanId"),
+        Index(value = ["creditCardId"], name = "index_transactions_creditCardId")
     ]
 )
 @Serializable
@@ -95,5 +106,6 @@ data class Transaction(
     val creditCardId: Long?,
     val date: String,
     val description: String,
-    val interestAmount: Double = 0.0
+    val interestAmount: Double = 0.0,
+    val createdAt: Long = System.currentTimeMillis()
 )

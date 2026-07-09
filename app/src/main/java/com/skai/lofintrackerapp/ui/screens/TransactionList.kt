@@ -19,6 +19,9 @@ import com.skai.lofintrackerapp.data.db.CreditCard
 import com.skai.lofintrackerapp.data.db.Transaction
 import com.skai.lofintrackerapp.data.db.TransactionType
 import com.skai.lofintrackerapp.ui.common.formatDateForDisplay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.skai.lofintrackerapp.ui.common.formatCurrency
 
 @Composable
@@ -40,6 +43,9 @@ fun TransactionList(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         transactions.forEach { transaction ->
             val sourceName = when {
+                transaction.category == "Credit Card Payment" && transaction.accountId != null && transaction.creditCardId != null -> {
+                    "${accountMap[transaction.accountId] ?: "Unknown Account"} -> ${cardMap[transaction.creditCardId] ?: "Unknown Card"}"
+                }
                 transaction.creditCardId != null -> cardMap[transaction.creditCardId] ?: "Unknown Card"
                 transaction.accountId != null -> accountMap[transaction.accountId] ?: "Unknown Account"
                 else -> "Unknown"
@@ -67,11 +73,16 @@ private fun TransactionRow(transaction: Transaction, sourceName: String, currenc
             Icon(imageVector = icon, contentDescription = null, tint = amountColor, modifier = Modifier.padding(end = 12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = transaction.category, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(text = "$sourceName | ${formatDateForDisplay(transaction.date)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = "$sourceName | ${formatDateForDisplay(transaction.date)} | ${formatTransactionTime(transaction.createdAt)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (transaction.description.isNotBlank()) Text(text = transaction.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(text = "$sign$formattedAmount", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = amountColor, modifier = Modifier.padding(end = 8.dp))
             IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
+}
+
+private fun formatTransactionTime(createdAt: Long): String {
+    if (createdAt <= 0L) return "time not recorded"
+    return SimpleDateFormat("hh:mm a", Locale.US).format(Date(createdAt))
 }

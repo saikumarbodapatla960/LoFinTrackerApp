@@ -108,9 +108,15 @@ fun LoanFormDialog(
                     value = initialAmount,
                     onValueChange = { initialAmount = it },
                     label = { Text("Initial Amount") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = loanToEdit == null
+                    enabled = loanToEdit == null,
+                    isError = loanToEdit == null && initialAmount.isNotBlank() && ((initialAmount.toDoubleOrNull() ?: -1.0) <= 0.0),
+                    supportingText = {
+                        if (loanToEdit == null && initialAmount.isNotBlank() && ((initialAmount.toDoubleOrNull() ?: -1.0) <= 0.0)) {
+                            Text("Loan amount must be greater than zero.")
+                        }
+                    }
                 )
 
                 if (loanToEdit == null) {
@@ -134,8 +140,9 @@ fun LoanFormDialog(
                         Text("Cancel")
                     }
 
-                    val isSaveEnabled = name.isNotBlank() && lender.isNotBlank() && 
-                            (loanToEdit != null || (selectedAccountId != null && initialAmount.toDoubleOrNull() != null))
+                    val initialAmountValue = initialAmount.toDoubleOrNull()
+                    val isSaveEnabled = name.isNotBlank() && lender.isNotBlank() &&
+                            (loanToEdit != null || (selectedAccountId != null && initialAmountValue != null && initialAmountValue > 0.0))
 
                     Button(
                         onClick = {

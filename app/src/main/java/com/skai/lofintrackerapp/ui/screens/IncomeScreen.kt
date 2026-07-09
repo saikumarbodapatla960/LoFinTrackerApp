@@ -4,8 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,8 +70,8 @@ fun IncomeScreen(viewModel: MainViewModel) {
             Text(text = "Income Transactions", style = MaterialTheme.typography.titleLarge)
             IconButton(onClick = { viewModel.toggleSortOrder() }) {
                 Icon(
-                    imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                    contentDescription = "Toggle Sort Order",
+                    imageVector = Icons.Default.AccessTime,
+                    contentDescription = if (isSortDesc) "Newest added first" else "Oldest added first",
                     tint = MaterialTheme.colorScheme.primary
                 )
             }

@@ -54,7 +54,7 @@ fun CreditCardScreen(viewModel: MainViewModel) {
         contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
-            // Removed top Spacer for cleaner look
+            Spacer(modifier = Modifier.height(16.dp))
             ReusableTotalCard("Total Credit Card Debt", totalDebt, currency, Color(0xFFFDECEA), Color(0xFFF44336))
             Spacer(modifier = Modifier.height(16.dp))
             Text("Your Cards", style = MaterialTheme.typography.titleLarge)
@@ -88,8 +88,8 @@ fun CreditCardScreen(viewModel: MainViewModel) {
                 Text("Recent Card Transactions", style = MaterialTheme.typography.titleLarge)
                 IconButton(onClick = { viewModel.toggleSortOrder() }) {
                     Icon(
-                        imageVector = if (isSortDesc) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                        contentDescription = "Toggle Sort Order",
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = if (isSortDesc) "Newest added first" else "Oldest added first",
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }

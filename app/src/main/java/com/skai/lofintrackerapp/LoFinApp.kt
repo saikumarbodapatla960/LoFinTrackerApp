@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 
 class LoFinApp : Application() {
     val database by lazy { AppDatabase.getDatabase(this) }
-    val repository by lazy { AppRepository(database.appDao()) }
+    val repository by lazy { AppRepository(database.appDao(), applicationContext) }
 
     override fun onCreate() {
         super.onCreate()

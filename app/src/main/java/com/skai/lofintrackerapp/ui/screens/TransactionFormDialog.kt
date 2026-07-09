@@ -104,7 +104,7 @@ fun TransactionFormDialog(
     var selectedLoanId by remember { mutableStateOf(transactionToEdit?.loanId) }
 
     var selectedCardToPayId by remember {
-        mutableStateOf(if (transactionToEdit?.category == "Credit Card Payment") transactionToEdit.loanId else null)
+        mutableStateOf(if (transactionToEdit?.category == "Credit Card Payment") transactionToEdit.creditCardId else null)
     }
 
     var isAmountError by remember { mutableStateOf(false) }
@@ -155,7 +155,10 @@ fun TransactionFormDialog(
     // --- SET INITIAL SELECTION ---
     LaunchedEffect(Unit) {
         if (transactionToEdit != null) {
-            if (transactionToEdit.creditCardId != null) {
+            if (transactionToEdit.category == "Credit Card Payment") {
+                selectedFundingSource = allFundingSources.find { it.id == "account-${transactionToEdit.accountId}" }
+                selectedCardToPayId = transactionToEdit.creditCardId
+            } else if (transactionToEdit.creditCardId != null) {
                 selectedFundingSource = allFundingSources.find { it.id == "card-${transactionToEdit.creditCardId}" }
             } else {
                 selectedFundingSource = allFundingSources.find { it.id == "account-${transactionToEdit.accountId}" }
@@ -326,9 +329,10 @@ fun TransactionFormDialog(
                         isAmountError = (it.toDoubleOrNull() ?: 0.0) <= 0.0
                     },
                     label = { Text("Amount") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                    isError = isAmountError
+                    isError = isAmountError,
+                    supportingText = { if (isAmountError) Text("Amount must be greater than zero.") }
                 )
 
                 // --- CATEGORY ---
@@ -434,9 +438,13 @@ fun TransactionFormDialog(
                                     amount = amount.toDoubleOrNull() ?: 0.0,
                                     category = category,
                                     accountId = if (source.type == "ACCOUNT") source.id.removePrefix("account-").toLong() else null,
-                                    creditCardId = if (source.type == "CARD") source.id.removePrefix("card-").toLong() else null,
+                                    creditCardId = when {
+                                        category == "Credit Card Payment" -> selectedCardToPayId
+                                        source.type == "CARD" -> source.id.removePrefix("card-").toLong()
+                                        else -> null
+                                    },
                                     paymentMode = if (type == TransactionType.EXPENSE) paymentMode else null,
-                                    loanId = if (category == "Loan Repayment") selectedLoanId else if (category == "Credit Card Payment") selectedCardToPayId else null,
+                                    loanId = if (category == "Loan Repayment") selectedLoanId else null,
                                     date = dbDate,
                                     description = description
                                 )
@@ -509,13 +517,14 @@ fun TransactionFormDialog(
                         value = emiAmountValue,
                         onValueChange = { emiAmountValue = it },
                         label = { Text("Monthly EMI Amount") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                     )
                 }
             },
             confirmButton = {
                 Button(
-                    enabled = emiMonths.toIntOrNull() != null && emiAmountValue.toDoubleOrNull() != null,
+                    enabled = (emiMonths.toIntOrNull()?.let { it > 0 } == true) &&
+                            (emiAmountValue.toDoubleOrNull()?.let { it > 0.0 } == true),
                     onClick = {
                         val monthlyAmount = emiAmountValue.toDoubleOrNull() ?: 0.0
                         val nextDue = LocalDate.now().plusMonths(1).format(dbFormatter)
@@ -525,8 +534,8 @@ fun TransactionFormDialog(
                             amount = monthlyAmount,
                             category = "Credit Card Payment",
                             accountId = accounts.firstOrNull { it.type != AccountType.CASH }?.id ?: accounts.firstOrNull()?.id,
-                            creditCardId = null,
-                            loanId = savedTxForEmi?.creditCardId,
+                            creditCardId = savedTxForEmi?.creditCardId,
+                            loanId = null,
                             paymentMode = "Transfer",
                             description = "EMI: ${savedTxForEmi?.description} (${emiMonths} months)",
                             frequency = "Monthly",

@@ -28,7 +28,7 @@ class UserPreferences(private val context: Context) {
     val isAppLockEnabled: Flow<Boolean> = context.dataStore.data.map { it[APP_LOCK_KEY] ?: false }
     val reminderDays: Flow<Int> = context.dataStore.data.map { it[REMINDER_DAYS] ?: 1 }
 
-    suspend fun saveUserName(name: String) { context.dataStore.edit { it[USER_NAME] = name } }
+    suspend fun saveUserName(name: String) { context.dataStore.edit { it[USER_NAME] = name.trim() } }
     suspend fun saveAppTheme(theme: String) { context.dataStore.edit { it[APP_THEME] = theme } }
     suspend fun saveHasSeenTutorial(hasSeen: Boolean) { context.dataStore.edit { it[HAS_SEEN_TUTORIAL] = hasSeen } }
     suspend fun saveCurrency(currency: String) { context.dataStore.edit { it[CURRENCY] = currency } }

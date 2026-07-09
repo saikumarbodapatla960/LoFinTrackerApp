@@ -72,10 +72,14 @@ fun RecurringTransactionFormDialog(
     
     // Funding Source
     var selectedAccountId by remember { mutableStateOf<Long?>(itemToEdit?.accountId) }
-    var selectedCreditCardId by remember { mutableStateOf<Long?>(itemToEdit?.creditCardId) }
+    var selectedCreditCardId by remember {
+        mutableStateOf(if (itemToEdit?.category == "Credit Card Payment") null else itemToEdit?.creditCardId)
+    }
     
     // Target (Loan/Credit Card being paid)
-    var selectedTargetId by remember { mutableStateOf<Long?>(itemToEdit?.loanId) }
+    var selectedTargetId by remember {
+        mutableStateOf(if (itemToEdit?.category == "Credit Card Payment") itemToEdit.creditCardId else itemToEdit?.loanId)
+    }
     
     var paymentMode by remember { mutableStateOf(itemToEdit?.paymentMode ?: "") }
     var frequency by remember { mutableStateOf(itemToEdit?.frequency ?: "Monthly") }
@@ -84,6 +88,7 @@ fun RecurringTransactionFormDialog(
         mutableStateOf(itemToEdit?.nextDueDate?.toDisplayDateFromDb() ?: getNextMonthDateMillis().toDisplayDateString())
     }
     var isDateError by remember { mutableStateOf(false) }
+    var isAmountError by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     val categories = if (type == TransactionType.INCOME) DEFAULT_INCOME_CATEGORIES else DEFAULT_EXPENSE_CATEGORIES
@@ -174,10 +179,15 @@ fun RecurringTransactionFormDialog(
 
                 OutlinedTextField(
                     value = amount,
-                    onValueChange = { amount = it },
+                    onValueChange = {
+                        amount = it
+                        isAmountError = (it.toDoubleOrNull() ?: 0.0) <= 0.0
+                    },
                     label = { Text("Amount") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = isAmountError,
+                    supportingText = { if (isAmountError) Text("Amount must be greater than zero.") }
                 )
 
                 FormDropdown(
@@ -187,6 +197,7 @@ fun RecurringTransactionFormDialog(
                         category = categories[it]
                         if (category == "Credit Card Payment" || category == "Loan Repayment") {
                             selectedTargetId = null
+                            if (category == "Credit Card Payment") selectedCreditCardId = null
                         }
                     },
                     selectedTextValue = category
@@ -278,8 +289,8 @@ fun RecurringTransactionFormDialog(
                                 amount = amount.toDoubleOrNull() ?: 0.0,
                                 category = category,
                                 accountId = selectedAccountId,
-                                creditCardId = selectedCreditCardId,
-                                loanId = selectedTargetId,
+                                creditCardId = if (category == "Credit Card Payment") selectedTargetId else selectedCreditCardId,
+                                loanId = if (category == "Loan Repayment") selectedTargetId else null,
                                 paymentMode = paymentMode,
                                 description = description,
                                 frequency = frequency,
@@ -288,7 +299,10 @@ fun RecurringTransactionFormDialog(
                             onConfirm(newItem)
                             onDismiss()
                         },
-                        enabled = description.isNotBlank() && (selectedAccountId != null || selectedCreditCardId != null) && !isDateError
+                        enabled = description.isNotBlank() &&
+                                amount.toDoubleOrNull()?.let { it > 0.0 } == true &&
+                                (selectedAccountId != null || selectedCreditCardId != null || (category == "Credit Card Payment" && selectedTargetId != null)) &&
+                                !isDateError
                     ) { Text("Save") }
                 }
             }

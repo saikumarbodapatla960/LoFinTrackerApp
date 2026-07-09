@@ -18,7 +18,7 @@ interface AppDao {
     suspend fun updateAccount(account: Account)
     @Delete
     suspend fun deleteAccount(account: Account)
-    @Query("SELECT * FROM accounts ORDER BY name ASC")
+    @Query("SELECT * FROM accounts ORDER BY balance DESC, name COLLATE NOCASE ASC")
     fun getAllAccounts(): Flow<List<Account>>
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getAccountById(id: Long): Account?
@@ -41,7 +41,7 @@ interface AppDao {
     @Query("SELECT * FROM credit_cards ORDER BY name ASC")
     fun getAllCreditCards(): Flow<List<CreditCard>>
     @Insert
-    suspend fun insertCreditCard(card: CreditCard)
+    suspend fun insertCreditCard(card: CreditCard): Long
     @Update
     suspend fun updateCreditCard(card: CreditCard)
     @Delete
@@ -54,7 +54,7 @@ interface AppDao {
     suspend fun updateTransaction(transaction: Transaction)
     @Delete
     suspend fun deleteTransaction(transaction: Transaction)
-    @Query("SELECT * FROM transactions ORDER BY date DESC")
+    @Query("SELECT * FROM transactions ORDER BY createdAt DESC, id DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
     
     // Direct non-flow query to prevent deadlocks inside Room Transactions
@@ -63,6 +63,9 @@ interface AppDao {
     
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransactionById(id: Long): Transaction?
+
+    @Query("SELECT * FROM scheduled_transactions WHERE category = 'Credit Card Payment' AND creditCardId = :cardId LIMIT 1")
+    suspend fun getCreditCardSchedule(cardId: Long): ScheduledTransaction?
 
     // --- SCHEDULED TRANSACTION FUNCTIONS (NEW) ---
     @Query("SELECT * FROM scheduled_transactions ORDER BY nextDueDate ASC")
