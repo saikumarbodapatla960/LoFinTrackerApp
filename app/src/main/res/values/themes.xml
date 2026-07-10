@@ -3,4 +3,17 @@
     <style name="Theme.LoFinTrackerApp" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/purple_700</item>
     </style>
+
+    <!-- Splash Screen Theme -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Set the splash screen background -->
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+        <!-- Use a solid color for the system bar background -->
+        <item name="android:statusBarColor">@android:color/white</item>
+        <item name="android:navigationBarColor">@android:color/white</item>
+        <!-- Optional: Brand icon for the splash screen -->
+        <!-- <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item> -->
+        <!-- Optional: Post-splash screen theme. This is the theme of the Activity that will be shown after the splash screen is dismissed. -->
+        <item name="postSplashScreenTheme">@style/Theme.LoFinTrackerApp</item>
+    </style>
 </resources>

@@ -10,7 +10,15 @@ import kotlinx.serialization.Serializable
 enum class AccountType { BANK, CASH, SAVINGS, CURRENT, INVESTMENT, OTHER }
 
 @Serializable
-enum class TransactionType { EXPENSE, INCOME }
+enum class TransactionType {
+    EXPENSE,
+    INCOME,
+    LOAN_REPAYMENT,
+    LOAN_DISBURSEMENT,
+    CREDIT_CARD_PAYMENT,
+    CREDIT_CARD_SPEND,
+    INITIAL_BALANCE
+}
 
 @Entity(tableName = "accounts")
 @Serializable
@@ -69,15 +77,15 @@ data class ScheduledTransaction(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val type: TransactionType,
-    val amount: Double, 
+    val amount: Double,
     val category: String,
     val accountId: Long?,
     val creditCardId: Long?,
     val loanId: Long?,
     val paymentMode: String?,
     val description: String,
-    val frequency: String, 
-    val nextDueDate: String 
+    val frequency: String,
+    val nextDueDate: String
 )
 
 @Entity(

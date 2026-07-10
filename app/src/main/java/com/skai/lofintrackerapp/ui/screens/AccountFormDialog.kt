@@ -1,6 +1,5 @@
 package com.skai.lofintrackerapp.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -11,29 +10,39 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.skai.lofintrackerapp.data.db.Account
 import com.skai.lofintrackerapp.data.db.AccountType
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountFormDialog(
     accountToEdit: Account? = null,
     onDismiss: () -> Unit,
-    onConfirm: (Account) -> Unit
+    onConfirm: suspend (Account) -> String?, // For creating a new account
+    onUpdate: (Account) -> Unit, // For updating an existing account
+    isCashAccountInitialBalanceEditable: Boolean
 ) {
     var name by remember { mutableStateOf(accountToEdit?.name ?: "") }
-    var initialBalance by remember { mutableStateOf(accountToEdit?.initialBalance?.toString() ?: "") }
-    var selectedType by remember { mutableStateOf(accountToEdit?.type ?: AccountType.SAVINGS) }
+    var initialBalance by remember { mutableStateOf(accountToEdit?.initialBalance?.toString() ?: "0.0") }
+    // Lock the type to CASH if it's the initial editable one, otherwise default to SAVINGS
+    var selectedType by remember {
+        mutableStateOf(
+            if (accountToEdit == null && isCashAccountInitialBalanceEditable) AccountType.CASH
+            else accountToEdit?.type ?: AccountType.SAVINGS
+        )
+    }
     var isDropdownExpanded by remember { mutableStateOf(false) }
-    val initialBalanceValue = initialBalance.toDoubleOrNull()
-    val isBalanceInvalid = accountToEdit == null && (initialBalanceValue == null || initialBalanceValue < 0.0)
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Determine if the form fields should be enabled
+    val isEditing = accountToEdit != null
+    val isInitialCashSetup = !isEditing && isCashAccountInitialBalanceEditable
 
     Dialog(onDismissRequest = onDismiss) {
         Card {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = if (accountToEdit == null) "New Account" else "Edit Account",
+                    text = if (isEditing) "Edit Account" else "New Account",
                     style = MaterialTheme.typography.titleLarge
                 )
 
@@ -41,7 +50,9 @@ fun AccountFormDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Account Name") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    // For the one-time cash setup, the name "Cash" is not editable
+                    readOnly = isInitialCashSetup
                 )
 
                 OutlinedTextField(
@@ -50,80 +61,68 @@ fun AccountFormDialog(
                     label = { Text("Initial Balance") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = accountToEdit == null,
-                    isError = isBalanceInvalid,
-                    supportingText = { if (isBalanceInvalid) Text("Balance cannot be negative.") }
+                    // Balance is only editable when creating a new account (or the special cash setup)
+                    enabled = !isEditing
                 )
+                errorMessage?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
 
-                // --- FIXED DROPDOWN LOGIC ---
+                // Account Type Dropdown
                 ExposedDropdownMenuBox(
-                    expanded = isDropdownExpanded,
-                    onExpandedChange = {
-                        // Only allow expanding if creating a NEW account
-                        if (accountToEdit == null) {
-                            isDropdownExpanded = it
-                        }
-                    }
+                    expanded = isDropdownExpanded && !isEditing && !isInitialCashSetup, // Not expandable when editing or in cash setup
+                    onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
                 ) {
                     OutlinedTextField(
                         value = selectedType.name,
                         onValueChange = {},
-                        readOnly = true, // Crucial for dropdowns
+                        readOnly = true,
                         label = { Text("Account Type") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(), // This connects the field to the dropdown box
-                        enabled = accountToEdit == null,
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                        trailingIcon = { if (!isEditing && !isInitialCashSetup) ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        enabled = !isEditing
                     )
-
                     ExposedDropdownMenu(
-                        expanded = isDropdownExpanded,
+                        expanded = isDropdownExpanded && !isEditing && !isInitialCashSetup,
                         onDismissRequest = { isDropdownExpanded = false }
                     ) {
-                        // Showing all types except CASH (which is usually default/internal)
                         AccountType.entries.filter { it != AccountType.CASH }.forEach { type ->
                             DropdownMenuItem(
                                 text = { Text(type.name) },
                                 onClick = {
                                     selectedType = type
                                     isDropdownExpanded = false
-                                },
-                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                }
                             )
                         }
                     }
                 }
-                // --- END FIX ---
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
-                    }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
                     Button(
-                        enabled = name.isNotBlank() && (accountToEdit != null || !isBalanceInvalid),
+                        enabled = name.isNotBlank(),
                         onClick = {
-                        val balance = initialBalanceValue ?: 0.0
-
-                        val finalAccount = if (accountToEdit != null) {
-                            accountToEdit.copy(name = name)
-                        } else {
-                            Account(
-                                name = name,
-                                type = selectedType,
-                                initialBalance = balance,
-                                balance = balance
-                            )
+                            coroutineScope.launch {
+                                val balance = initialBalance.toDoubleOrNull() ?: 0.0
+                                if (isEditing) {
+                                    onUpdate(accountToEdit!!.copy(name = name))
+                                } else {
+                                    val newAccount = Account(
+                                        name = if(isInitialCashSetup) "Cash" else name,
+                                        type = selectedType,
+                                        initialBalance = balance,
+                                        balance = balance
+                                    )
+                                    val error = onConfirm(newAccount)
+                                    if (error != null) {
+                                        errorMessage = error
+                                    }
+                                }
+                            }
                         }
-                        onConfirm(finalAccount)
-                    }) {
-                        Text(if (accountToEdit == null) "Save" else "Update")
+                    ) {
+                        Text(if (isEditing) "Update" else "Save")
                     }
                 }
             }

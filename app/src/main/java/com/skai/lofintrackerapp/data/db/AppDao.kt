@@ -13,7 +13,7 @@ interface AppDao {
 
     // --- Account Functions ---
     @Insert
-    suspend fun insertAccount(account: Account)
+    suspend fun insertAccount(account: Account): Long
     @Update
     suspend fun updateAccount(account: Account)
     @Delete
@@ -49,7 +49,7 @@ interface AppDao {
 
     // --- Transaction Functions ---
     @Insert
-    suspend fun insertTransaction(transaction: Transaction)
+    suspend fun insertTransaction(transaction: Transaction): Long
     @Update
     suspend fun updateTransaction(transaction: Transaction)
     @Delete
@@ -57,7 +57,6 @@ interface AppDao {
     @Query("SELECT * FROM transactions ORDER BY createdAt DESC, id DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
     
-    // Direct non-flow query to prevent deadlocks inside Room Transactions
     @Query("SELECT * FROM transactions")
     suspend fun getTransactionsDirect(): List<Transaction>
     
@@ -67,16 +66,28 @@ interface AppDao {
     @Query("SELECT * FROM scheduled_transactions WHERE category = 'Credit Card Payment' AND creditCardId = :cardId LIMIT 1")
     suspend fun getCreditCardSchedule(cardId: Long): ScheduledTransaction?
 
-    // --- SCHEDULED TRANSACTION FUNCTIONS (NEW) ---
+    // --- SCHEDULED TRANSACTION FUNCTIONS ---
     @Query("SELECT * FROM scheduled_transactions ORDER BY nextDueDate ASC")
     fun getAllScheduledTransactions(): Flow<List<ScheduledTransaction>>
 
     @Insert
-    suspend fun insertScheduledTransaction(transaction: ScheduledTransaction)
+    suspend fun insertScheduledTransaction(transaction: ScheduledTransaction): Long
 
     @Update
     suspend fun updateScheduledTransaction(transaction: ScheduledTransaction)
 
     @Delete
     suspend fun deleteScheduledTransaction(transaction: ScheduledTransaction)
+
+    // --- Backup & Restore ---
+    @Query("DELETE FROM accounts")
+    suspend fun clearAccounts()
+    @Query("DELETE FROM loans")
+    suspend fun clearLoans()
+    @Query("DELETE FROM transactions")
+    suspend fun clearTransactions()
+    @Query("DELETE FROM credit_cards")
+    suspend fun clearCreditCards()
+    @Query("DELETE FROM scheduled_transactions")
+    suspend fun clearScheduledTransactions()
 }

@@ -1,5 +1,6 @@
 package com.skai.lofintrackerapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -21,6 +23,7 @@ import com.skai.lofintrackerapp.ui.common.ReusableTotalCard
 import com.skai.lofintrackerapp.ui.common.formatCurrency
 import com.skai.lofintrackerapp.ui.theme.FabGreen
 import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun BalanceScreen(viewModel: MainViewModel) {
@@ -28,6 +31,7 @@ fun BalanceScreen(viewModel: MainViewModel) {
     val totalBalance by viewModel.totalBalance.collectAsStateWithLifecycle(initialValue = 0.0)
     val currency by viewModel.currency.collectAsStateWithLifecycle(initialValue = "INR")
     val isSortDesc by viewModel.sortDescending.collectAsStateWithLifecycle(initialValue = true)
+    val isCashAccountInitialBalanceEditable by viewModel.isCashAccountInitialBalanceEditable.collectAsStateWithLifecycle(initialValue = false)
 
     var showAddOrEditDialog by remember { mutableStateOf(false) }
     var showUndeletableWarning by remember { mutableStateOf(false) }
@@ -46,12 +50,15 @@ fun BalanceScreen(viewModel: MainViewModel) {
     val filteredTransactions by viewModel.filteredBalanceTransactions.collectAsStateWithLifecycle(initialValue = emptyList())
     val filterItems = remember(accounts) { accounts.map { FilterSelectionItem(id = it.id, name = it.name) } }
 
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         floatingActionButton = {
             FloatingActionButton(onClick = { accountToEdit = null; showAddOrEditDialog = true }, containerColor = FabGreen) { Icon(Icons.Default.Add, "Add Account") }
         },
-        contentWindowInsets = WindowInsets(0.dp) // FIX: Remove double padding
+        contentWindowInsets = WindowInsets(0.dp)
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
             Spacer(modifier = Modifier.height(16.dp))
@@ -98,10 +105,10 @@ fun BalanceScreen(viewModel: MainViewModel) {
             Spacer(modifier = Modifier.height(8.dp))
 
             TransactionList(
-                transactions = filteredTransactions, 
-                accounts = accounts, 
-                creditCards = creditCards, 
-                currencyCode = currency, 
+                transactions = filteredTransactions,
+                accounts = accounts,
+                creditCards = creditCards,
+                currencyCode = currency,
                 onEdit = { transaction ->
                     transactionToEdit = transaction
                     showTransactionDialog = true
@@ -110,7 +117,26 @@ fun BalanceScreen(viewModel: MainViewModel) {
             Spacer(modifier = Modifier.height(80.dp)) // Spacer at bottom for FAB
         }
 
-        if (showAddOrEditDialog) AccountFormDialog(accountToEdit, { showAddOrEditDialog = false; accountToEdit = null }, { if (accountToEdit == null) viewModel.insertAccount(it) else viewModel.updateAccount(it); showAddOrEditDialog = false; accountToEdit = null })
+        if (showAddOrEditDialog) {
+            AccountFormDialog(
+                accountToEdit = accountToEdit,
+                onDismiss = { showAddOrEditDialog = false; accountToEdit = null },
+                onConfirm = { newAccount ->
+                    val error = viewModel.insertAccount(newAccount)
+                    if (error == null) {
+                        showAddOrEditDialog = false
+                        accountToEdit = null
+                    }
+                    error // Return error message to the dialog
+                },
+                onUpdate = { updatedAccount ->
+                    viewModel.updateAccount(updatedAccount)
+                    showAddOrEditDialog = false
+                    accountToEdit = null
+                },
+                isCashAccountInitialBalanceEditable = isCashAccountInitialBalanceEditable
+            )
+        }
         if (showEditConfirmation && accountToEdit != null) ConfirmationDialog("Edit Account", "Edit '${accountToEdit!!.name}'?", Icons.Default.Edit, "Edit", { showAddOrEditDialog = true; showEditConfirmation = false }, { showEditConfirmation = false; accountToEdit = null })
         if (showDeleteConfirmation != null) ConfirmationDialog("Delete Account", "Delete '${showDeleteConfirmation!!.name}'?", Icons.Default.Delete, "Delete", { viewModel.deleteAccount(showDeleteConfirmation!!); showDeleteConfirmation = null }, { showDeleteConfirmation = null })
         if (showUndeletableWarning) SimpleAlertDialog("Cannot Delete", "The default 'Cash' account cannot be deleted.", { showUndeletableWarning = false })

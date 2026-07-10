@@ -1,4 +1,3 @@
-// In ...ui/screens/DashboardScreen.kt
 package com.skai.lofintrackerapp.ui.screens
 
 import androidx.compose.foundation.clickable
@@ -14,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,7 +37,7 @@ fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
     val isSortDesc by viewModel.sortDescending.collectAsStateWithLifecycle(initialValue = true)
 
     val startDate by viewModel.startDate.collectAsStateWithLifecycle()
-    val endDate by viewModel.endDate.collectAsStateWithLifecycle()
+    val endDate by viewModel.startDate.collectAsStateWithLifecycle()
 
     var showTransactionDialog by remember { mutableStateOf(false) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
@@ -143,7 +143,13 @@ private fun SummaryCard(
         Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.CenterStart)) {
                 Text(text = title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(text = formattedAmount, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp), color = color)
+                Text(
+                    text = formattedAmount,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp),
+                    color = color,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             Icon(imageVector = icon, contentDescription = title, tint = color, modifier = Modifier.size(32.dp).align(Alignment.TopEnd))
         }

@@ -3,10 +3,13 @@ package com.skai.lofintrackerapp.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.app.Activity
+import android.content.ClipData
+import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,7 +32,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skai.lofintrackerapp.data.db.Transaction
+import com.skai.lofintrackerapp.data.db.TransactionType
 import com.skai.lofintrackerapp.ui.viewmodel.MainViewModel
+import com.skai.lofintrackerapp.ui.common.getCurrencyDisplaySymbol
 import java.io.File
 import java.io.FileOutputStream
 
@@ -44,7 +49,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val allTransactions by viewModel.allTransactions.collectAsStateWithLifecycle()
     val allAccounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val totalDebt by viewModel.totalDebt.collectAsStateWithLifecycle()
-    
+
     val context = LocalContext.current
 
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -53,15 +58,22 @@ fun SettingsScreen(viewModel: MainViewModel) {
     var showReminderDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var settingsMessage by remember { mutableStateOf<String?>(null) }
-    
+
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val content = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() }
-            if (content != null) {
-            viewModel.restoreFromJson(content)
-                settingsMessage = "Backup restored."
+            try {
+                val content = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() }
+                if (content != null) {
+                    viewModel.restoreFromJson(content) { success ->
+                        settingsMessage = if (success) "Backup restored successfully." else "Failed to restore backup."
+                    }
+                } else {
+                    settingsMessage = "Could not read backup file."
+                }
+            } catch (e: Exception) {
+                settingsMessage = "Error: ${e.message}"
             }
         }
     }
@@ -72,8 +84,8 @@ fun SettingsScreen(viewModel: MainViewModel) {
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // --- PROFILE ---
-        Text("Profile", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        // --- PROFILE SETTINGS ---
+        Text("Profile Settings", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         settingsMessage?.let {
             Spacer(modifier = Modifier.height(8.dp))
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -94,12 +106,54 @@ fun SettingsScreen(viewModel: MainViewModel) {
             onClick = { showReminderDialog = true }
         )
 
+        // --- APP SETTINGS ---
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("App Settings", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.height(8.dp))
+
         SettingsItem(
-            icon = Icons.Default.Info,
-            title = "App Version",
-            subtitle = "2.6-fix - July 9, 2026",
-            onClick = { settingsMessage = "You are running the fixed build." }
+            icon = Icons.Default.Palette,
+            title = "App Theme",
+            subtitle = currentTheme.replaceFirstChar { it.uppercase() },
+            onClick = { showThemeDialog = true }
         )
+
+        SettingsItem(
+            icon = Icons.Default.AttachMoney,
+            title = "Primary Currency",
+            subtitle = getCurrencyDisplaySymbol(currency),
+            onClick = { showCurrencyDialog = true }
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Fingerprint, "Security", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text("App Lock", style = MaterialTheme.typography.bodyLarge)
+                    Text("Require fingerprint or PIN", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Switch(
+                checked = isAppLockEnabled,
+                onCheckedChange = { requested ->
+                    authenticateForSettingChange(
+                        context = context,
+                        enable = requested,
+                        onSuccess = {
+                            viewModel.saveAppLockEnabled(requested)
+                            settingsMessage = if (requested) "App Lock enabled." else "App Lock disabled."
+                        },
+                        onError = { settingsMessage = it }
+                    )
+                }
+            )
+        }
+        HorizontalDivider()
 
         // --- BACKUP & TRANSFER ---
         Spacer(modifier = Modifier.height(24.dp))
@@ -141,53 +195,16 @@ fun SettingsScreen(viewModel: MainViewModel) {
             onClick = { generateFinancialPdf(context, userName, allAccounts.sumOf { it.balance }, totalDebt, currency, allTransactions) }
         )
 
-        // --- APPEARANCE & SECURITY ---
+        // --- ABOUT ---
         Spacer(modifier = Modifier.height(24.dp))
-        Text("App Settings", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text("About", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(8.dp))
-
         SettingsItem(
-            icon = Icons.Default.Palette,
-            title = "App Theme",
-            subtitle = currentTheme.replaceFirstChar { it.uppercase() },
-            onClick = { showThemeDialog = true }
+            icon = Icons.Default.Info,
+            title = "App Version",
+            subtitle = "2.6-fix - July 9, 2026",
+            onClick = { settingsMessage = "You are running the fixed build." }
         )
-
-        SettingsItem(
-            icon = Icons.Default.AttachMoney,
-            title = "Primary Currency",
-            subtitle = currency,
-            onClick = { showCurrencyDialog = true }
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Fingerprint, "Security", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text("App Lock", style = MaterialTheme.typography.bodyLarge)
-                    Text("Require fingerprint or PIN", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Switch(
-                checked = isAppLockEnabled,
-                onCheckedChange = { requested ->
-                    authenticateForSettingChange(
-                        context = context,
-                        enable = requested,
-                        onSuccess = {
-                            viewModel.saveAppLockEnabled(requested)
-                            settingsMessage = if (requested) "App Lock enabled." else "App Lock disabled."
-                        },
-                        onError = { settingsMessage = it }
-                    )
-                }
-            )
-        }
     }
 
     // --- DIALOGS ---
@@ -236,7 +253,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         ) {
                             RadioButton(selected = currency == curr, onClick = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(curr)
+                            Text(getCurrencyDisplaySymbol(curr, true))
                         }
                     }
                 }
@@ -299,10 +316,6 @@ private fun authenticateForSettingChange(
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 onError(errString.toString())
             }
-
-            override fun onAuthenticationFailed() {
-                onError("Authentication failed. Try again.")
-            }
         }
     )
 
@@ -331,37 +344,39 @@ fun SettingsItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: S
     HorizontalDivider()
 }
 
-// --- HELPER FUNCTIONS ---
-
-fun exportBackup(context: Context, json: String) {
-    try {
-        val filename = "lofin_system_backup_${System.currentTimeMillis()}.json"
-        val file = File(context.cacheDir, filename)
-        file.writeText(json)
-        shareFile(context, file, "application/json", "System Backup")
+private fun createSharedFile(context: Context, fileName: String, content: String): File? {
+    return try {
+        val exportDir = File(context.cacheDir, "exports")
+        if (!exportDir.exists()) exportDir.mkdirs()
+        File(exportDir, fileName).apply { writeText(content) }
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "Export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "Failed to create file: ${e.message}", Toast.LENGTH_LONG).show()
+        null
     }
 }
 
-fun exportFinancialCSV(context: Context, transactions: List<Transaction>) {
-    try {
-        val csvHeader = "Date,Amount,Type,Category,Description,InterestPaid\n"
-        val sb = StringBuilder().append(csvHeader)
-        transactions.forEach {
-            sb.append("${it.date},${it.amount},${it.type},${it.category},${it.description.replace(",", " ")},${it.interestAmount}\n")
-        }
-        val file = File(context.cacheDir, "lofin_excel_report_${System.currentTimeMillis()}.csv")
-        file.writeText(sb.toString())
-        shareFile(context, file, "text/csv", "Financial Excel Report")
-    } catch (e: Exception) {
-        e.printStackTrace()
-        Toast.makeText(context, "CSV export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
-    }
+private fun exportBackup(context: Context, json: String) {
+    val file = createSharedFile(context, "lofin_system_backup_${System.currentTimeMillis()}.json", json)
+    if (file != null) shareFile(context, file, "application/json", "System Backup")
 }
 
-fun generateFinancialPdf(context: Context, name: String, balance: Double, debt: Double, currency: String, txs: List<Transaction>) {
+private fun exportFinancialCSV(context: Context, transactions: List<Transaction>) {
+    val csvHeader = "Date,Amount,Type,Category,Description,InterestPaid\n"
+    val sb = StringBuilder().append(csvHeader)
+    transactions.forEach {
+        val amountStr = if (it.type == TransactionType.INCOME || it.type == TransactionType.LOAN_DISBURSEMENT || it.type == TransactionType.INITIAL_BALANCE) "+${it.amount}" else "-${it.amount}"
+        sb.append("${it.date},$amountStr,${it.type},${it.category},${it.description.replace(",", " ")},${it.interestAmount}\n")
+    }
+    val file = createSharedFile(context, "lofin_excel_report_${System.currentTimeMillis()}.csv", sb.toString())
+    if (file != null) shareFile(context, file, "text/csv", "Financial Excel Report")
+}
+
+private fun generateFinancialPdf(context: Context, name: String, balance: Double, debt: Double, currency: String, txs: List<Transaction>) {
+    val exportDir = File(context.cacheDir, "exports")
+    if (!exportDir.exists()) exportDir.mkdirs()
+    val file = File(exportDir, "lofin_financial_statement_${System.currentTimeMillis()}.pdf")
+
     try {
         val document = PdfDocument()
         val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
@@ -371,45 +386,65 @@ fun generateFinancialPdf(context: Context, name: String, balance: Double, debt: 
 
         paint.textSize = 24f
         canvas.drawText("LoFin Tracker: Financial Statement", 50f, 60f, paint)
-        
+
         paint.textSize = 14f
         canvas.drawText("Prepared for: $name", 50f, 100f, paint)
         canvas.drawText("Total Available Balance: $currency $balance", 50f, 130f, paint)
         canvas.drawText("Total Outstanding Debt: $currency $debt", 50f, 150f, paint)
-        
+
         paint.textSize = 16f
         canvas.drawText("Recent Activity Summary", 50f, 200f, paint)
-        
+
         var y = 230f
         paint.textSize = 10f
         txs.take(25).forEach {
-            val amountStr = if (it.type.name == "INCOME") "+${it.amount}" else "-${it.amount}"
+            val amountStr = if (it.type == TransactionType.INCOME || it.type == TransactionType.LOAN_DISBURSEMENT || it.type == TransactionType.INITIAL_BALANCE) "+${it.amount}" else "-${it.amount}"
             canvas.drawText("${it.date} | ${it.category}: $currency $amountStr", 70f, y, paint)
             y += 20f
-            if (y > 800) return@forEach // Basic overflow check
+            if (y > 800) return@forEach
         }
 
         document.finishPage(page)
-        val file = File(context.cacheDir, "lofin_financial_statement_${System.currentTimeMillis()}.pdf")
         document.writeTo(FileOutputStream(file))
         document.close()
         shareFile(context, file, "application/pdf", "Financial PDF Statement")
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "PDF export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "PDF export failed: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
 
 private fun shareFile(context: Context, file: File, mimeType: String, title: String) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = mimeType
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    try {
+        val authority = "${context.packageName}.provider"
+        val uri = FileProvider.getUriForFile(context, authority, file)
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            // ClipData is necessary for proper URI permission handling on modern Android versions
+            clipData = ClipData.newRawUri(null, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        val chooser = Intent.createChooser(shareIntent, title)
+        // Ensure chooser also has the flag for permission propagation
+        chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+        if (context !is Activity) {
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        // Manual permission granting as a fallback for older apps
+        val resInfoList = context.packageManager.queryIntentActivities(shareIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        for (resolveInfo in resInfoList) {
+            val packageName = resolveInfo.activityInfo.packageName
+            context.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        Log.e("SettingsScreen", "Sharing failed", e)
+        Toast.makeText(context, "Failed to share file: ${e.message}", Toast.LENGTH_LONG).show()
     }
-    val chooser = Intent.createChooser(intent, title)
-    if (context !is Activity) {
-        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    context.startActivity(chooser)
 }

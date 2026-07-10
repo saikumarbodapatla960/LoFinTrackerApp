@@ -1,19 +1,19 @@
 package com.skai.lofintrackerapp.data.repository
 
 import android.content.Context
-import androidx.room.Transaction as RoomTransaction
+import androidx.room.withTransaction
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.skai.lofintrackerapp.PaymentReminderWorker
 import com.skai.lofintrackerapp.data.db.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 
 class AppRepository(
-    private val appDao: AppDao,
+    private val database: AppDatabase,
     private val appContext: Context? = null
 ) {
+    private val appDao = database.appDao()
 
     val allAccounts: Flow<List<Account>> = appDao.getAllAccounts()
     val allLoans: Flow<List<Loan>> = appDao.getAllLoans()
@@ -21,7 +21,11 @@ class AppRepository(
     val allCreditCards: Flow<List<CreditCard>> = appDao.getAllCreditCards()
     val allScheduledTransactions: Flow<List<ScheduledTransaction>> = appDao.getAllScheduledTransactions()
 
-    suspend fun insertAccount(account: Account) { appDao.insertAccount(account) }
+    suspend fun insertAccount(account: Account): String? {
+        if (account.initialBalance < 0) return "Initial balance cannot be negative."
+        appDao.insertAccount(account)
+        return null
+    }
     suspend fun updateAccount(account: Account) { appDao.updateAccount(account) }
     suspend fun deleteAccount(account: Account) { appDao.deleteAccount(account) }
     suspend fun insertLoan(loan: Loan): Long = appDao.insertLoan(loan)
@@ -37,93 +41,73 @@ class AppRepository(
     }
     suspend fun deleteScheduledTransaction(tx: ScheduledTransaction) { appDao.deleteScheduledTransaction(tx) }
 
-    @RoomTransaction
     suspend fun insertLoanAndPayout(loan: Loan, payoutAccountId: Long) {
-        val newLoanId = appDao.insertLoan(loan)
-        val payoutTransaction = Transaction(
-            type = TransactionType.INCOME,
-            amount = loan.initialAmount,
-            category = "Loan",
-            accountId = payoutAccountId,
-            paymentMode = null,
-            loanId = newLoanId,
-            creditCardId = null,
-            date = loan.date,
-            description = "Loan payout from ${loan.lender}",
-            createdAt = System.currentTimeMillis()
-        )
-        insertTransactionAndUpdateBalances(payoutTransaction)
+        database.withTransaction {
+            val newLoanId = appDao.insertLoan(loan)
+            val payoutTransaction = Transaction(
+                type = TransactionType.INCOME,
+                amount = loan.initialAmount,
+                category = "Loan",
+                accountId = payoutAccountId,
+                paymentMode = null,
+                loanId = newLoanId,
+                creditCardId = null,
+                date = loan.date,
+                description = "Loan payout from ${loan.lender}",
+                createdAt = System.currentTimeMillis()
+            )
+            insertTransactionAndUpdateBalances(payoutTransaction)
+        }
     }
 
     suspend fun insertCreditCard(card: CreditCard) {
-        val cardId = appDao.insertCreditCard(card)
-        upsertCreditCardSchedule(card.copy(id = cardId))
+        database.withTransaction {
+            val cardId = appDao.insertCreditCard(card)
+            upsertCreditCardSchedule(card.copy(id = cardId))
+        }
     }
     suspend fun updateCreditCard(card: CreditCard) {
-        appDao.updateCreditCard(card)
-        upsertCreditCardSchedule(card)
+        database.withTransaction {
+            appDao.updateCreditCard(card)
+            upsertCreditCardSchedule(card)
+        }
     }
     suspend fun deleteCreditCard(card: CreditCard) { appDao.deleteCreditCard(card) }
 
-    @RoomTransaction
     suspend fun insertTransactionAndUpdateBalances(transaction: Transaction): String? {
         if (transaction.amount <= 0) return "Amount must be greater than zero."
-
-        // Helper to validate a transaction without applying changes
-        val validationError = validateTransaction(transaction)
-        if (validationError != null) return validationError
-
-        // Process interest calculation for debt payments (Request 7)
-        val finalTransaction = transaction.withCalculatedInterest()
-            .copy(createdAt = if (transaction.createdAt == 0L) System.currentTimeMillis() else transaction.createdAt)
-
-        appDao.insertTransaction(finalTransaction)
-        applyBalanceUpdates(finalTransaction)
-        return null
+        return database.withTransaction {
+            val validationError = validateTransaction(transaction)
+            if (validationError != null) return@withTransaction validationError
+            val finalTransaction = transaction.withCalculatedInterest()
+                .copy(createdAt = if (transaction.createdAt == 0L) System.currentTimeMillis() else transaction.createdAt)
+            appDao.insertTransaction(finalTransaction)
+            applyBalanceUpdates(finalTransaction)
+            null
+        }
     }
 
     private suspend fun validateTransaction(transaction: Transaction, ignoredTransactionId: Long? = null): String? {
-        if (transaction.amount <= 0) return "Amount must be greater than zero."
-
-        val txDate = LocalDate.parse(transaction.date)
-
+        val txDate = try { LocalDate.parse(transaction.date) } catch (e: Exception) { return "Invalid date format." }
         if (transaction.type == TransactionType.EXPENSE) {
             when {
                 transaction.category == "Credit Card Payment" -> {
                     val account = transaction.accountId?.let { appDao.getAccountById(it) } ?: return "Invalid bank account."
                     val card = transaction.creditCardId?.let { appDao.getCreditCardById(it) } ?: return "Invalid credit card."
-
                     if (card.amountOwed <= 0) return "Cannot pay bill for a card with no debt."
-                    
                     val balanceAtDate = calculateBalanceAtDate(account.id, txDate, ignoredTransactionId)
-                    if (balanceAtDate < transaction.amount) {
-                        return "Insufficient funds in '${account.name}' on ${transaction.date}. Balance was ₹$balanceAtDate."
-                    }
+                    if (balanceAtDate < transaction.amount) return "Insufficient funds in '${account.name}' on ${transaction.date}."
                 }
                 transaction.paymentMode == "Credit Card" -> {
                     val card = transaction.creditCardId?.let { appDao.getCreditCardById(it) } ?: return "Invalid Credit Card."
-                    if (card.amountOwed + transaction.amount > card.limit) {
-                        return "Transaction failed: Exceeds credit limit."
-                    }
+                    if (card.amountOwed + transaction.amount > card.limit) return "Transaction failed: Exceeds credit limit."
                 }
                 else -> {
                     val account = transaction.accountId?.let { appDao.getAccountById(it) } ?: return "Invalid account."
-                    
                     val balanceAtDate = calculateBalanceAtDate(account.id, txDate, ignoredTransactionId)
-                    if (balanceAtDate < transaction.amount && account.type == AccountType.CASH) {
-                        return "Insufficient funds in 'Cash' on ${transaction.date}. Balance was ₹$balanceAtDate."
-                    } else if (balanceAtDate < transaction.amount) {
-                        return "Insufficient funds in '${account.name}' on ${transaction.date}. Balance was ₹$balanceAtDate."
-                    }
+                    if (balanceAtDate < transaction.amount) return "Insufficient funds in '${account.name}' on ${transaction.date}."
                 }
             }
-
-            if (transaction.category == "Loan Repayment" && transaction.loanId != null) {
-                val loan = appDao.getLoanById(transaction.loanId) ?: return "Invalid loan."
-                if (loan.isClosed) return "This loan is already closed."
-            }
-        } else { // INCOME
-            if (transaction.accountId == null) return "Income transaction must have an account"
         }
         return null
     }
@@ -131,14 +115,10 @@ class AppRepository(
     private suspend fun calculateBalanceAtDate(accountId: Long, date: LocalDate, ignoredTransactionId: Long? = null): Double {
         val account = appDao.getAccountById(accountId) ?: return 0.0
         val transactions = appDao.getTransactionsDirect().filter { it.accountId == accountId && it.id != ignoredTransactionId }
-        
         var runningBalance = account.initialBalance
-        transactions.filter { LocalDate.parse(it.date).isBefore(date) || LocalDate.parse(it.date).isEqual(date) }
+        transactions.filter { try { !LocalDate.parse(it.date).isAfter(date) } catch(e: Exception) { false } }
             .sortedBy { it.date }
-            .forEach {
-                if (it.type == TransactionType.INCOME) runningBalance += it.amount
-                else runningBalance -= it.amount
-            }
+            .forEach { if (it.type == TransactionType.INCOME) runningBalance += it.amount else runningBalance -= it.amount }
         return runningBalance
     }
 
@@ -146,138 +126,77 @@ class AppRepository(
         if (transaction.type == TransactionType.EXPENSE) {
             when {
                 transaction.category == "Credit Card Payment" -> {
-                    transaction.accountId?.let { id ->
-                        appDao.getAccountById(id)?.let { acc ->
-                            appDao.updateAccount(acc.copy(balance = acc.balance - transaction.amount))
-                        }
-                    }
-                    transaction.creditCardId?.let { id ->
-                        appDao.getCreditCardById(id)?.let { card ->
-                            val principalPaid = minOf(transaction.amount, card.amountOwed)
-                            val interestPaid = (transaction.amount - principalPaid).coerceAtLeast(0.0)
-                            updateCreditCardAndSchedule(card.copy(
-                                amountOwed = (card.amountOwed - principalPaid).coerceAtLeast(0.0),
-                                totalInterestPaid = card.totalInterestPaid + interestPaid
-                            ))
-                        }
-                    }
+                    transaction.accountId?.let { id -> appDao.getAccountById(id)?.let { acc -> appDao.updateAccount(acc.copy(balance = acc.balance - transaction.amount)) } }
+                    transaction.creditCardId?.let { id -> appDao.getCreditCardById(id)?.let { card ->
+                        val principalPaid = minOf(transaction.amount, card.amountOwed)
+                        updateCreditCardAndSchedule(card.copy(amountOwed = (card.amountOwed - principalPaid).coerceAtLeast(0.0), totalInterestPaid = card.totalInterestPaid + (transaction.amount - principalPaid).coerceAtLeast(0.0)))
+                    } }
                 }
                 transaction.paymentMode == "Credit Card" -> {
-                    transaction.creditCardId?.let { id ->
-                        appDao.getCreditCardById(id)?.let { card ->
-                            updateCreditCardAndSchedule(card.copy(amountOwed = card.amountOwed + transaction.amount))
-                        }
-                    }
+                    transaction.creditCardId?.let { id -> appDao.getCreditCardById(id)?.let { card -> updateCreditCardAndSchedule(card.copy(amountOwed = card.amountOwed + transaction.amount)) } }
                 }
                 else -> {
-                    transaction.accountId?.let { id ->
-                        appDao.getAccountById(id)?.let { acc ->
-                            appDao.updateAccount(acc.copy(balance = acc.balance - transaction.amount))
-                        }
-                    }
+                    transaction.accountId?.let { id -> appDao.getAccountById(id)?.let { acc -> appDao.updateAccount(acc.copy(balance = acc.balance - transaction.amount)) } }
                 }
             }
-
             if (transaction.category == "Loan Repayment" && transaction.loanId != null) {
                 appDao.getLoanById(transaction.loanId)?.let { loan ->
                     val principalPaid = minOf(transaction.amount, loan.remainingAmount)
-                    val interestPaid = (transaction.amount - principalPaid).coerceAtLeast(0.0)
                     val newRemaining = (loan.remainingAmount - principalPaid).coerceAtLeast(0.0)
-                    appDao.updateLoan(loan.copy(
-                        remainingAmount = newRemaining,
-                        totalInterestPaid = loan.totalInterestPaid + interestPaid,
-                        isClosed = newRemaining <= 0
-                    ))
+                    appDao.updateLoan(loan.copy(remainingAmount = newRemaining, totalInterestPaid = loan.totalInterestPaid + (transaction.amount - principalPaid).coerceAtLeast(0.0), isClosed = newRemaining <= 0))
                 }
             }
-        } else { // INCOME
-            transaction.accountId?.let { id ->
-                appDao.getAccountById(id)?.let { acc ->
-                    appDao.updateAccount(acc.copy(balance = acc.balance + transaction.amount))
-                }
-            }
+        } else {
+            transaction.accountId?.let { id -> appDao.getAccountById(id)?.let { acc -> appDao.updateAccount(acc.copy(balance = acc.balance + transaction.amount)) } }
         }
     }
 
-    @RoomTransaction
     suspend fun updateTransactionAndUpdateBalances(oldTx: Transaction, newTx: Transaction): String? {
-        // Revert the effects of the old transaction
-        revertBalanceUpdates(oldTx)
-
-        val preparedNewTx = newTx.withCalculatedInterest().copy(
-            id = oldTx.id,
-            createdAt = System.currentTimeMillis()
-        )
-        val error = validateTransaction(preparedNewTx, ignoredTransactionId = oldTx.id)
-        if (error != null) {
-            // If the new transaction fails, re-apply the old transaction's updates to restore state
-            applyBalanceUpdates(oldTx) 
-            return error
+        return database.withTransaction {
+            revertBalanceUpdates(oldTx)
+            val preparedNewTx = newTx.withCalculatedInterest().copy(id = oldTx.id, createdAt = System.currentTimeMillis())
+            val error = validateTransaction(preparedNewTx, ignoredTransactionId = oldTx.id)
+            if (error != null) { applyBalanceUpdates(oldTx); return@withTransaction error }
+            applyBalanceUpdates(preparedNewTx)
+            appDao.updateTransaction(preparedNewTx)
+            null
         }
-
-        applyBalanceUpdates(preparedNewTx)
-        appDao.updateTransaction(preparedNewTx)
-        return null
     }
 
     private suspend fun revertBalanceUpdates(transaction: Transaction) {
         if (transaction.type == TransactionType.EXPENSE) {
             when {
                 transaction.category == "Credit Card Payment" -> {
-                    transaction.accountId?.let { id ->
-                        appDao.getAccountById(id)?.let { acc ->
-                            appDao.updateAccount(acc.copy(balance = acc.balance + transaction.amount))
-                        }
-                    }
-                    transaction.creditCardId?.let { id ->
-                        appDao.getCreditCardById(id)?.let { card ->
-                            val principalReverted = (transaction.amount - transaction.interestAmount).coerceAtLeast(0.0)
-                            updateCreditCardAndSchedule(card.copy(
-                                amountOwed = card.amountOwed + principalReverted,
-                                totalInterestPaid = (card.totalInterestPaid - transaction.interestAmount).coerceAtLeast(0.0)
-                            ))
-                        }
-                    }
+                    transaction.accountId?.let { id -> appDao.getAccountById(id)?.let { acc -> appDao.updateAccount(acc.copy(balance = acc.balance + transaction.amount)) } }
+                    transaction.creditCardId?.let { id -> appDao.getCreditCardById(id)?.let { card ->
+                        val principalReverted = (transaction.amount - transaction.interestAmount).coerceAtLeast(0.0)
+                        updateCreditCardAndSchedule(card.copy(amountOwed = card.amountOwed + principalReverted, totalInterestPaid = (card.totalInterestPaid - transaction.interestAmount).coerceAtLeast(0.0)))
+                    } }
                 }
                 transaction.paymentMode == "Credit Card" -> {
-                    transaction.creditCardId?.let { id ->
-                        appDao.getCreditCardById(id)?.let { card ->
-                            updateCreditCardAndSchedule(card.copy(amountOwed = (card.amountOwed - transaction.amount).coerceAtLeast(0.0)))
-                        }
-                    }
+                    transaction.creditCardId?.let { id -> appDao.getCreditCardById(id)?.let { card -> updateCreditCardAndSchedule(card.copy(amountOwed = (card.amountOwed - transaction.amount).coerceAtLeast(0.0))) } }
                 }
                 else -> {
-                    transaction.accountId?.let { id ->
-                        appDao.getAccountById(id)?.let { acc ->
-                            appDao.updateAccount(acc.copy(balance = acc.balance + transaction.amount))
-                        }
-                    }
+                    transaction.accountId?.let { id -> appDao.getAccountById(id)?.let { acc -> appDao.updateAccount(acc.copy(balance = acc.balance + transaction.amount)) } }
                 }
             }
-
             if (transaction.category == "Loan Repayment" && transaction.loanId != null) {
                 appDao.getLoanById(transaction.loanId)?.let { loan ->
                     val principalReverted = (transaction.amount - transaction.interestAmount).coerceAtLeast(0.0)
                     val newRemaining = loan.remainingAmount + principalReverted
-                    appDao.updateLoan(loan.copy(
-                        remainingAmount = newRemaining,
-                        totalInterestPaid = (loan.totalInterestPaid - transaction.interestAmount).coerceAtLeast(0.0),
-                        isClosed = newRemaining <= 0.0
-                    ))
+                    appDao.updateLoan(loan.copy(remainingAmount = newRemaining, totalInterestPaid = (loan.totalInterestPaid - transaction.interestAmount).coerceAtLeast(0.0), isClosed = newRemaining <= 0.0))
                 }
             }
-        } else { // INCOME
-            transaction.accountId?.let { id ->
-                appDao.getAccountById(id)?.let { acc ->
-                    appDao.updateAccount(acc.copy(balance = acc.balance - transaction.amount))
-                }
-            }
+        } else {
+            transaction.accountId?.let { id -> appDao.getAccountById(id)?.let { acc -> appDao.updateAccount(acc.copy(balance = acc.balance - transaction.amount)) } }
         }
     }
 
     suspend fun deleteTransactionAndUpdateBalances(transaction: Transaction) {
-        revertBalanceUpdates(transaction)
-        appDao.deleteTransaction(transaction)
+        database.withTransaction {
+            revertBalanceUpdates(transaction)
+            appDao.deleteTransaction(transaction)
+        }
     }
 
     private suspend fun Transaction.withCalculatedInterest(): Transaction {
@@ -335,4 +254,80 @@ class AppRepository(
         }
     }
 
+    suspend fun restoreAllData(
+        accounts: List<Account>,
+        loans: List<Loan>,
+        transactions: List<Transaction>,
+        creditCards: List<CreditCard>,
+        scheduledTransactions: List<ScheduledTransaction>
+    ) {
+        database.withTransaction {
+            // Order matters due to Foreign Key RESTRICT constraints!
+            appDao.clearTransactions()
+            appDao.clearScheduledTransactions()
+            appDao.clearLoans()
+            appDao.clearCreditCards()
+            appDao.clearAccounts()
+
+            val accountIdMap = mutableMapOf<Long, Long>()
+            accounts.forEach { oldAcc ->
+                val newId = appDao.insertAccount(oldAcc.copy(id = 0))
+                accountIdMap[oldAcc.id] = newId
+            }
+
+            val loanIdMap = mutableMapOf<Long, Long>()
+            loans.forEach { oldLoan ->
+                val newId = appDao.insertLoan(oldLoan.copy(id = 0))
+                loanIdMap[oldLoan.id] = newId
+            }
+
+            val cardIdMap = mutableMapOf<Long, Long>()
+            creditCards.forEach { oldCard ->
+                val newId = appDao.insertCreditCard(oldCard.copy(id = 0))
+                cardIdMap[oldCard.id] = newId
+            }
+
+            transactions.forEach { oldTx ->
+                val restoredCreditCardId = when {
+                    oldTx.creditCardId != null -> cardIdMap[oldTx.creditCardId]
+                    oldTx.category == "Credit Card Payment" && oldTx.loanId != null -> cardIdMap[oldTx.loanId]
+                    else -> null
+                }
+                val mappedTx = oldTx.copy(
+                    id = 0,
+                    accountId = oldTx.accountId?.let { accountIdMap[it] },
+                    loanId = if (oldTx.category == "Credit Card Payment") null else oldTx.loanId?.let { loanIdMap[it] },
+                    creditCardId = restoredCreditCardId
+                )
+                appDao.insertTransaction(mappedTx)
+            }
+
+            scheduledTransactions.forEach { oldSt ->
+                val restoredCreditCardId = when {
+                    oldSt.creditCardId != null -> cardIdMap[oldSt.creditCardId]
+                    oldSt.category == "Credit Card Payment" && oldSt.loanId != null -> cardIdMap[oldSt.loanId]
+                    else -> null
+                }
+                val mappedSt = oldSt.copy(
+                    id = 0,
+                    accountId = oldSt.accountId?.let { accountIdMap[it] },
+                    loanId = if (oldSt.category == "Credit Card Payment") null else oldSt.loanId?.let { loanIdMap[it] },
+                    creditCardId = restoredCreditCardId
+                )
+                appDao.insertScheduledTransaction(mappedSt)
+            }
+
+            cardIdMap.values.forEach { newCardId ->
+                appDao.getCreditCardById(newCardId)?.let { card ->
+                    if (appDao.getCreditCardSchedule(newCardId) == null) {
+                        upsertCreditCardSchedule(card)
+                    }
+                }
+            }
+
+            if (accounts.isEmpty()) {
+                appDao.insertAccount(Account(name = "Cash", type = AccountType.CASH, initialBalance = 0.0, balance = 0.0))
+            }
+        }
+    }
 }
