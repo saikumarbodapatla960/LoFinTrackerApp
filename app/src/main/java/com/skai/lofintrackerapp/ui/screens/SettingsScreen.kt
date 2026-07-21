@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -199,11 +200,24 @@ fun SettingsScreen(viewModel: MainViewModel) {
         Spacer(modifier = Modifier.height(24.dp))
         Text("About", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(8.dp))
+
+        val packageInfo = remember {
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getPackageInfo(context.packageName, 0)
+                }
+            }.getOrNull()
+        }
+        val appVersion = packageInfo?.versionName ?: "2.6"
+
         SettingsItem(
             icon = Icons.Default.Info,
             title = "App Version",
-            subtitle = "2.6-fix - July 9, 2026",
-            onClick = { settingsMessage = "You are running the fixed build." }
+            subtitle = "version - $appVersion",
+            onClick = { settingsMessage = "You are running version $appVersion." }
         )
     }
 

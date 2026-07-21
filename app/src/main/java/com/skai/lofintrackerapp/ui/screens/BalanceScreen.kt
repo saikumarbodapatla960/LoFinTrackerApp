@@ -134,7 +134,8 @@ fun BalanceScreen(viewModel: MainViewModel) {
                     showAddOrEditDialog = false
                     accountToEdit = null
                 },
-                isCashAccountInitialBalanceEditable = isCashAccountInitialBalanceEditable
+                isCashAccountInitialBalanceEditable = isCashAccountInitialBalanceEditable,
+                accountsExist = accounts.isNotEmpty()
             )
         }
         if (showEditConfirmation && accountToEdit != null) ConfirmationDialog("Edit Account", "Edit '${accountToEdit!!.name}'?", Icons.Default.Edit, "Edit", { showAddOrEditDialog = true; showEditConfirmation = false }, { showEditConfirmation = false; accountToEdit = null })

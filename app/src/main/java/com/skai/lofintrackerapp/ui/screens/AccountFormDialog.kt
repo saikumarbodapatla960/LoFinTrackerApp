@@ -19,14 +19,19 @@ fun AccountFormDialog(
     onDismiss: () -> Unit,
     onConfirm: suspend (Account) -> String?, // For creating a new account
     onUpdate: (Account) -> Unit, // For updating an existing account
-    isCashAccountInitialBalanceEditable: Boolean
+    isCashAccountInitialBalanceEditable: Boolean,
+    accountsExist: Boolean
 ) {
     var name by remember { mutableStateOf(accountToEdit?.name ?: "") }
     var initialBalance by remember { mutableStateOf(accountToEdit?.initialBalance?.toString() ?: "0.0") }
-    // Lock the type to CASH if it's the initial editable one, otherwise default to SAVINGS
+    
+    // Determine if this is the very first account being created
+    val isFirstAccount = accountToEdit == null && !accountsExist
+    
+    // Lock the type to CASH if it's the first account, otherwise default to SAVINGS or the current type
     var selectedType by remember {
         mutableStateOf(
-            if (accountToEdit == null && isCashAccountInitialBalanceEditable) AccountType.CASH
+            if (isFirstAccount) AccountType.CASH
             else accountToEdit?.type ?: AccountType.SAVINGS
         )
     }
@@ -34,9 +39,16 @@ fun AccountFormDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
 
-    // Determine if the form fields should be enabled
     val isEditing = accountToEdit != null
-    val isInitialCashSetup = !isEditing && isCashAccountInitialBalanceEditable
+    // Initial setup mode is only for the first account when no transactions have been made
+    val isInitialCashSetup = isFirstAccount && isCashAccountInitialBalanceEditable
+
+    // Auto-fill name to "Cash" for the first account setup
+    LaunchedEffect(isInitialCashSetup) {
+        if (isInitialCashSetup && name.isEmpty()) {
+            name = "Cash"
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card {
@@ -61,8 +73,8 @@ fun AccountFormDialog(
                     label = { Text("Initial Balance") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
-                    // Balance is only editable when creating a new account (or the special cash setup)
-                    enabled = !isEditing
+                    // Balance is editable when creating a new account OR if it's an initial setup period
+                    enabled = !isEditing || isCashAccountInitialBalanceEditable
                 )
                 errorMessage?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -70,17 +82,17 @@ fun AccountFormDialog(
 
                 // Account Type Dropdown
                 ExposedDropdownMenuBox(
-                    expanded = isDropdownExpanded && !isEditing && !isInitialCashSetup, // Not expandable when editing or in cash setup
+                    expanded = isDropdownExpanded && !isEditing && !isInitialCashSetup,
                     onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
                 ) {
                     OutlinedTextField(
-                        value = selectedType.name,
+                        value = selectedType.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() },
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Account Type") },
                         trailingIcon = { if (!isEditing && !isInitialCashSetup) ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDropdownExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(),
-                        enabled = !isEditing
+                        enabled = !isEditing && !isInitialCashSetup
                     )
                     ExposedDropdownMenu(
                         expanded = isDropdownExpanded && !isEditing && !isInitialCashSetup,
@@ -88,7 +100,7 @@ fun AccountFormDialog(
                     ) {
                         AccountType.entries.filter { it != AccountType.CASH }.forEach { type ->
                             DropdownMenuItem(
-                                text = { Text(type.name) },
+                                text = { Text(type.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }) },
                                 onClick = {
                                     selectedType = type
                                     isDropdownExpanded = false
@@ -106,7 +118,12 @@ fun AccountFormDialog(
                             coroutineScope.launch {
                                 val balance = initialBalance.toDoubleOrNull() ?: 0.0
                                 if (isEditing) {
-                                    onUpdate(accountToEdit!!.copy(name = name))
+                                    onUpdate(accountToEdit!!.copy(
+                                        name = name,
+                                        initialBalance = balance,
+                                        // Update current balance too if we are allowed to edit initial balance
+                                        balance = if (isCashAccountInitialBalanceEditable) balance else accountToEdit.balance
+                                    ))
                                 } else {
                                     val newAccount = Account(
                                         name = if(isInitialCashSetup) "Cash" else name,

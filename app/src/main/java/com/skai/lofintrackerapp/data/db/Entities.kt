@@ -7,7 +7,18 @@ import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class AccountType { BANK, CASH, SAVINGS, CURRENT, INVESTMENT, OTHER }
+enum class AccountType { 
+    CASH, 
+    SAVINGS, 
+    CURRENT, 
+    SALARY,
+    FIXED_DEPOSIT, 
+    RECURRING_DEPOSIT, 
+    INVESTMENT, 
+    EPF_PPF,
+    DIGITAL_WALLET, 
+    OTHER 
+}
 
 @Serializable
 enum class TransactionType {
